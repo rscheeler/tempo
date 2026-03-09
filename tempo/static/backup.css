@@ -1,0 +1,51 @@
+/* Override button-specific variables */
+:root {
+    --bs-btn-color: var(--my-primary-text) !important;
+    --bs-btn-bg: var(--my-primary-color) !important;
+    --bs-btn-border-color: var(--my-primary-color) !important;
+    --bs-btn-hover-color: var(--my-primary-text) !important;
+    --bs-btn-hover-bg: color-mix(in srgb, var(--my-primary-color) 80%, black) !important;
+    /* Darken on hover */
+    --bs-btn-hover-border-color: color-mix(in srgb, var(--my-primary-color) 80%, black) !important;
+    --bs-btn-focus-shadow-rgb: var(--my-primary-rgb) !important;
+    --bs-btn-active-color: var(--my-primary-text) !important;
+    --bs-btn-active-bg: color-mix(in srgb, var(--my-primary-color) 70%, black) !important;
+    /* Darken on active */
+    --bs-btn-active-border-color: color-mix(in srgb, var(--my-primary-color) 70%, black) !important;
+    --bs-btn-disabled-color: var(--my-primary-text) !important;
+    /* Adjust if needed */
+    --bs-btn-disabled-bg: #6c757d !important;
+    /* Default disabled color */
+    --bs-btn-disabled-border-color: #6c757d !important;
+    /* Default disabled border */
+}
+
+/* Target the specific .btn-primary class directly for background and border */
+.btn-primary {
+    background-color: var(--my-primary-color) !important;
+    border-color: var(--my-primary-color) !important;
+    color: var(--my-primary-text) !important;
+}
+
+
+
+/* Target hover state specifically */
+.btn-primary:hover {
+    background-color: color-mix(in srgb, var(--my-primary-color) 80%, black) !important;
+    border-color: color-mix(in srgb, var(--my-primary-color) 80%, black) !important;
+    color: var(--my-primary-text) !important;
+}
+
+/* Target active state specifically */
+.btn-primary:active,
+.btn-primary.active,
+.show>.btn-primary.dropdown-toggle {
+    background-color: color-mix(in srgb, var(--my-primary-color) 70%, black) !important;
+    border-color: color-mix(in srgb, var(--my-primary-color) 70%, black) !important;
+    color: var(--my-primary-text) !important;
+}
+
+/* Target focus state */
+.btn-primary:focus {
+    box-shadow: 0 0 0 0.25rem rgba(var(--my-primary-rgb), 0.5) !important;
+}

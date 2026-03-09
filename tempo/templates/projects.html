@@ -1,0 +1,724 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2 class="mb-4">Manage Projects</h2>
+
+<button type="button" class="btn btn-success mb-4" data-bs-toggle="modal" data-bs-target="#addProjectModal">
+    <i class="fas fa-plus-circle me-2"></i>Add New Project
+</button>
+
+<h3 class="mb-3">Existing Projects</h3>
+<div class="form-check mb-3">
+    <input class="form-check-input" type="checkbox" id="showArchivedProjects" {% if
+        request.query_params.show_archived=='true' %}checked{% endif %}>
+    <label class="form-check-label" for="showArchivedProjects">
+        Show Archived Projects
+    </label>
+</div>
+
+<div class="project-list">
+    {% for project in projects %}
+    <div class="list-card-item">
+        <div class="d-flex justify-content-between align-items-start">
+            <div>
+                <h5 class="mb-1">
+                    <i class="fas fa-folder-open me-2"></i><strong>{{ project.name }}</strong>
+                </h5>
+                <div class="info-row"><i class="fas fa-user-tie"></i> Customer: {{ project.customer.name if
+                    project.customer else 'N/A' }}</div>
+                <div class="info-row"><i class="fas fa-tag"></i> Type: {{ project.project_type|replace('_', ' ')|title
+                    }}</div>
+                {% if project.start_date %}<div class="info-row"><i class="fas fa-calendar-alt"></i> Start: {{
+                    project.start_date|date('%Y-%m-%d') }}</div>{% endif %}
+                {% if project.end_date %}<div class="info-row"><i class="fas fa-calendar-alt"></i> End: {{
+                    project.end_date|date('%Y-%m-%d') }}</div>{% endif %}
+                {% if project.budget %}<div class="info-row"><i class="fas fa-money-bill-wave"></i> Budget: ${{
+                    project.budget|currency }} {{ project.budget_unit|title }}</div>{% endif %}
+                {% if project.total_charged_amount is not none %}<div class="info-row"><i
+                        class="fas fa-dollar-sign"></i> Charged: ${{
+                    project.total_charged_amount|currency }}</div>{% endif %}
+                {% if project.project_type == 'non_billable' and project.total_hours_spent is not none %}<div
+                    class="info-row"><i class="fas fa-clock"></i> Total Hours: {{
+                    project.total_hours_spent|round(2) }}</div>{% endif %}
+                <div class="info-row"><i class="fas fa-dollar-sign"></i> Rate Type: {{ project.rate_type|replace('_', '
+                    ')|title }}</div>
+                {% if project.project_rate %}<div class="info-row"><i class="fas fa-calculator"></i> Project Rate: ${{
+                    project.project_rate|currency }}</div>{% endif %}
+                {% if project.description %}<div class="info-row"><i class="fas fa-info-circle"></i> {{
+                    project.description }}</div>{% endif %}
+            </div>
+            <div>
+                <span class="badge bg-{{ 'secondary' if project.is_archived else 'primary' }} rounded-pill">{{
+                    'Archived' if project.is_archived else 'Active' }}</span>
+            </div>
+        </div>
+        {% if project.tasks %}
+        <div class="mt-3 pt-3 border-top">
+            <h6><i class="fas fa-tasks me-2"></i>Tasks:</h6>
+            <ul class="list-unstyled mb-0">
+                {% for task in project.tasks %}
+                <li>
+                    <i class="fas fa-check-circle text-success me-2"></i>{{ task.name }} {% if task.task_rate %} <span
+                        class="text-muted">Rate: ${{ task.task_rate|currency }}</span>{% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+        <div class="actions">
+            <button type="button" class="btn btn-sm btn-info me-2 edit-project-btn" data-id="{{ project.id }}"><i
+                    class="fas fa-edit"></i> Edit</button>
+            <button type="button" class="btn btn-sm btn-warning archive-project-btn" data-id="{{ project.id }}"
+                data-is-archived="{{ project.is_archived | lower }}">
+                <i class="fas fa-{{ 'box-open' if project.is_archived else 'archive' }}"></i> {{ 'Unarchive' if
+                project.is_archived else 'Archive' }}
+            </button>
+            <button type="button" class="btn btn-sm btn-danger delete-project-btn" data-id="{{ project.id }}"><i
+                    class="fas fa-trash-alt"></i> Delete</button>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-info">No projects found.</div>
+    {% endfor %}
+</div>
+
+<div class="modal fade" id="addProjectModal" tabindex="-1" aria-labelledby="addProjectModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addProjectModalLabel">Add New Project</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addProjectForm">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Project Name</label>
+                        <input type="text" class="form-control" id="name" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="customerId" class="form-label">Customer</label>
+                        <select class="form-select" id="customerId" name="customer_id" required>
+                            <option value="">Select a Customer</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="projectType" class="form-label">Project Type</label>
+                        <select class="form-select" id="projectType" name="project_type">
+                            <option value="time_and_material">Time and Material</option>
+                            <option value="fixed_fee">Fixed Fee</option>
+                            <option value="non_billable">Non-Billable</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="startDate" class="form-label">Start Date</label>
+                        <input type="date" class="form-control" id="startDate" name="start_date">
+                    </div>
+                    <div class="mb-3">
+                        <label for="endDate" class="form-label">End Date</label>
+                        <input type="date" class="form-control" id="endDate" name="end_date">
+                    </div>
+                    <div class="mb-3">
+                        <label for="budget" class="form-label">Budget</label>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="number" step="0.01" class="form-control" id="budget" name="budget">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="budgetUnit" class="form-label">Budget Unit</label>
+                        <select class="form-select" id="budgetUnit" name="budget_unit">
+                            <option value="dollars">Dollars</option>
+                            <option value="hours">Hours</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="rateType" class="form-label">Rate Type</label>
+                        <select class="form-select" id="rateType" name="rate_type">
+                            <option value="project">Project</option>
+                            <option value="task">Task</option>
+                        </select>
+                    </div>
+                    <div class="mb-3" id="addProjectRateGroup">
+                        <label for="projectRate" class="form-label">Project Rate</label>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="number" step="0.01" class="form-control" id="projectRate" name="project_rate">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control" id="description" name="description" rows="3"></textarea>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="isArchived" name="is_archived">
+                        <label class="form-check-label" for="isArchived">
+                            Is Archived
+                        </label>
+                    </div>
+
+                    <h4 class="mt-4">Tasks for this Project</h4>
+                    <div id="addTasksContainer">
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm mt-2" id="addTaskBtn">Add Task</button>
+                    <hr>
+                    <button type="submit" class="btn btn-success">Add Project</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="editProjectModal" tabindex="-1" aria-labelledby="editProjectModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editProjectModalLabel">Edit Project</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editProjectForm">
+                    <input type="hidden" id="editProjectId" name="id">
+                    <div class="mb-3">
+                        <label for="editName" class="form-label">Project Name</label>
+                        <input type="text" class="form-control" id="editName" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editCustomerId" class="form-label">Customer</label>
+                        <select class="form-select" id="editCustomerId" name="customer_id" required>
+                            <option value="">Select a Customer</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editProjectType" class="form-label">Project Type</label>
+                        <select class="form-select" id="editProjectType" name="project_type">
+                            <option value="time_and_material">Time and Material</option>
+                            <option value="fixed_fee">Fixed Fee</option>
+                            <option value="non_billable">Non-Billable</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editStartDate" class="form-label">Start Date</label>
+                        <input type="date" class="form-control" id="editStartDate" name="start_date">
+                    </div>
+                    <div class="mb-3">
+                        <label for="editEndDate" class="form-label">End Date</label>
+                        <input type="date" class="form-control" id="editEndDate" name="end_date">
+                    </div>
+                    <div class="mb-3">
+                        <label for="editBudget" class="form-label">Budget</label>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="number" step="0.01" class="form-control" id="editBudget" name="budget">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editBudgetUnit" class="form-label">Budget Unit</label>
+                        <select class="form-select" id="editBudgetUnit" name="budget_unit">
+                            <option value="dollars">Dollars</option>
+                            <option value="hours">Hours</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editRateType" class="form-label">Rate Type</label>
+                        <select class="form-select" id="editRateType" name="rate_type">
+                            <option value="project">Project</option>
+                            <option value="task">Task</option>
+                        </select>
+                    </div>
+                    <div class="mb-3" id="editProjectRateGroup">
+                        <label for="editProjectRate" class="form-label">Project Rate</label>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="number" step="0.01" class="form-control" id="editProjectRate"
+                                name="project_rate">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="editDescription" name="description" rows="3"></textarea>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="editIsArchived" name="is_archived">
+                        <label class="form-check-label" for="editIsArchived">
+                            Is Archived
+                        </label>
+                    </div>
+
+                    <h4 class="mt-4">Tasks</h4>
+                    <div id="editTasksContainer">
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm mt-2" id="editAddTaskBtn">Add New
+                        Task</button>
+                    <hr>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<script>
+    // Helper function to show messages
+    function showMessage(message, type = 'info') {
+        const alertContainer = document.querySelector('.container.mt-4'); // Assuming a container for alerts
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+        alertDiv.setAttribute('role', 'alert');
+        alertDiv.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        alertContainer.prepend(alertDiv); // Add to top
+        setTimeout(() => alertDiv.remove(), 5000); // Remove after 5 seconds
+    }
+
+    // Function to populate dropdowns (generic)
+    async function populateDropdown(selectElement, url, placeholder, selectedId = null) {
+        selectElement.innerHTML = `<option value="">${placeholder}</option>`;
+        try {
+            const response = await fetch(url);
+            if (response.ok) {
+                const items = await response.json();
+                items.forEach(item => {
+                    const option = document.createElement('option');
+                    option.value = item.id;
+                    option.textContent = item.name || item.email; // For users, use email or name
+                    selectElement.appendChild(option);
+                });
+                if (selectedId) {
+                    selectElement.value = selectedId;
+                }
+            } else {
+                console.error(`Error fetching ${placeholder.toLowerCase()}s:`, await response.json());
+                showMessage(`Error fetching ${placeholder.toLowerCase()}s.`, 'error');
+            }
+        } catch (error) {
+            console.error(`An unexpected error occurred while fetching ${placeholder.toLowerCase()}s:`, error);
+            showMessage(`An unexpected error occurred while fetching ${placeholder.toLowerCase()}s.`, 'error');
+        }
+    }
+
+    // Helper function to add a task input group
+    async function addTaskInputGroup(containerId, prefix, task = {}) {
+        const container = document.getElementById(containerId);
+        // Ensure taskIndex is unique across all tasks in the form, not just within the current container's children
+        // This is important if tasks are removed and then re-added, to prevent duplicate IDs/names
+        const taskIndex = task.id || Date.now() + Math.floor(Math.random() * 1000);
+
+        const taskIdInput = task.id ? `<input type="hidden" name="${prefix}[${taskIndex}][id]" value="${task.id}">` : '';
+        const taskName = task.name || '';
+        const taskRate = task.task_rate || '';
+
+        let hasTimeEntries = false;
+        if (task.id) {
+            try {
+                const response = await fetch(`{{ url_for("has_task_time_entries", task_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', task.id));
+                hasTimeEntries = await response.json();
+            } catch (error) {
+                console.error(`Error checking time entries for task ${task.id}:`, error);
+                showMessage(`Error checking time entries for task ${task.name}.`, 'error');
+            }
+        }
+
+        const taskGroup = document.createElement('div');
+        taskGroup.className = 'row g-2 mb-2 align-items-end task-input-group';
+        taskGroup.innerHTML = `
+            ${taskIdInput}
+            <div class="col-md-6">
+                <label for="${prefix}TaskName${taskIndex}" class="form-label visually-hidden">Task Name</label>
+                <input type="text" class="form-control" id="${prefix}TaskName${taskIndex}" name="${prefix}[${taskIndex}][name]" placeholder="Task Name" value="${taskName}" required>
+            </div>
+            <div class="col-md-4 task-rate-group">
+                <label for="${prefix}TaskRate${taskIndex}" class="form-label visually-hidden">Task Rate</label>
+                <div class="input-group">
+                    <span class="input-group-text">$</span>
+                    <input type="number" step="0.01" class="form-control" id="${prefix}TaskRate${taskIndex}" name="${prefix}[${taskIndex}][task_rate]" placeholder="Task Rate" value="${taskRate}">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-danger w-100 remove-task-btn"
+                    ${hasTimeEntries ? 'disabled title="Cannot remove: Time entries exist for this task"' : ''}>
+                    Remove
+                </button>
+            </div>
+        `;
+        container.appendChild(taskGroup);
+
+        // Add event listener for the remove button
+        const removeBtn = taskGroup.querySelector('.remove-task-btn');
+        if (!hasTimeEntries) { // Only add click listener if not disabled
+            removeBtn.addEventListener('click', function () {
+                taskGroup.remove();
+                updateRateFieldsVisibility(); // Re-evaluate visibility after removing
+            });
+        }
+
+        updateRateFieldsVisibility(); // Initial visibility check
+    }
+
+    // Function to toggle visibility of rate inputs based on project type and rate type
+    function updateRateFieldsVisibility() {
+        const addForm = document.getElementById('addProjectForm');
+        const editForm = document.getElementById('editProjectForm');
+
+        // Handle Add Project Form
+        if (addForm) {
+            const projectTypeAdd = addForm.querySelector('#projectType').value;
+            const rateTypeAdd = addForm.querySelector('#rateType').value;
+
+            const isNonBillableAdd = projectTypeAdd === 'non_billable';
+            const isTaskRateAdd = rateTypeAdd === 'task';
+
+            // Project Rate visibility
+            addForm.querySelector('#addProjectRateGroup').style.display = (isNonBillableAdd || isTaskRateAdd) ? 'none' : 'block';
+
+            // Task Rate visibility
+            addForm.querySelectorAll('.task-rate-group').forEach(group => {
+                group.style.display = isTaskRateAdd ? 'block' : 'none';
+            });
+        }
+
+        // Handle Edit Project Form
+        if (editForm) {
+            const projectTypeEdit = editForm.querySelector('#editProjectType').value;
+            const rateTypeEdit = editForm.querySelector('#editRateType').value;
+
+            const isNonBillableEdit = projectTypeEdit === 'non_billable';
+            const isTaskRateEdit = rateTypeEdit === 'task';
+
+            // Project Rate visibility
+            editForm.querySelector('#editProjectRateGroup').style.display = (isNonBillableEdit || isTaskRateEdit) ? 'none' : 'block';
+
+            // Task Rate visibility
+            editForm.querySelectorAll('.task-rate-group').forEach(group => {
+                group.style.display = isTaskRateEdit ? 'block' : 'none';
+            });
+        }
+    }
+
+    // Function to populate customer dropdowns
+    async function populateCustomerDropdowns(selectedCustomerId = null) {
+        try {
+            // Changed URL to point to the API endpoint in routers/customers.py
+            const response = await fetch("{{ url_for('get_all_customers') }}?show_archived=false");
+            if (response.ok) {
+                const customers = await response.json();
+                const addCustomerSelect = document.getElementById('customerId');
+                const editCustomerSelect = document.getElementById('editCustomerId');
+
+                // Clear existing options except the default "Select a Customer"
+                addCustomerSelect.innerHTML = '<option value="">Select a Customer</option>';
+                editCustomerSelect.innerHTML = '<option value="">Select a Customer</option>';
+
+                customers.forEach(customer => {
+                    if (!customer.is_archived) { // Only add non-archived customers
+                        const optionAdd = document.createElement('option');
+                        optionAdd.value = customer.id;
+                        optionAdd.textContent = customer.name;
+                        addCustomerSelect.appendChild(optionAdd);
+
+                        const optionEdit = document.createElement('option');
+                        optionEdit.value = customer.id;
+                        optionEdit.textContent = customer.name;
+                        editCustomerSelect.appendChild(optionEdit);
+                    }
+                });
+
+                // Set selected customer if provided
+                if (selectedCustomerId) {
+                    addCustomerSelect.value = selectedCustomerId;
+                    editCustomerSelect.value = selectedCustomerId;
+                }
+            } else {
+                const errorData = await response.json();
+                showMessage('Error fetching customers: ' + (errorData.detail || response.statusText), 'error');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            showMessage('An unexpected error occurred while fetching customers.', 'error');
+        }
+    }
+
+    // Initial population of customer dropdowns and visibility checks when the page loads
+    document.addEventListener('DOMContentLoaded', () => {
+        populateCustomerDropdowns();
+        updateRateFieldsVisibility(); // Initial call for visibility
+    });
+
+    // Event listener for opening Add Project Modal
+    document.getElementById('addProjectModal').addEventListener('show.bs.modal', function () {
+        populateCustomerDropdowns(); // Re-populate customers when modal opens
+        updateRateFieldsVisibility(); // Ensure correct rate visibility
+        document.getElementById('addProjectForm').reset(); // Clear form fields
+        document.getElementById('addTasksContainer').innerHTML = ''; // Clear existing tasks
+        addTaskInputGroup('addTasksContainer', 'tasks'); // Add one default task input
+    });
+
+
+    // Event listeners for rate type and project type changes
+    document.getElementById('rateType').addEventListener('change', updateRateFieldsVisibility);
+    document.getElementById('projectType').addEventListener('change', updateRateFieldsVisibility);
+    document.getElementById('editRateType').addEventListener('change', updateRateFieldsVisibility);
+    document.getElementById('editProjectType').addEventListener('change', updateRateFieldsVisibility);
+
+
+    // Add Project Form Submission
+    document.getElementById('addProjectForm').addEventListener('submit', async function (event) {
+        event.preventDefault();
+        const formData = new FormData(event.target);
+        const projectData = Object.fromEntries(formData.entries());
+
+        // Convert numeric fields, handle empty strings as null for optional fields
+        projectData.customer_id = parseInt(projectData.customer_id);
+        projectData.budget = projectData.budget ? parseFloat(projectData.budget) : null;
+        projectData.project_rate = projectData.project_rate ? parseFloat(projectData.project_rate) : null;
+        projectData.is_archived = formData.has('is_archived');
+
+        // Handle optional date fields
+        if (!projectData.start_date) delete projectData.start_date;
+        if (!projectData.end_date) delete projectData.end_date;
+
+        // Conditional removal of project_rate for non_billable projects
+        if (projectData.project_type === 'non_billable') {
+            delete projectData.project_rate;
+        }
+        // Conditional removal of project_rate if rate_type is 'task'
+        if (projectData.rate_type === 'task') {
+            delete projectData.project_rate;
+        }
+
+        // Collect tasks
+        const tasks = [];
+        document.querySelectorAll('#addTasksContainer .task-input-group').forEach(taskGroup => {
+            const taskNameInput = taskGroup.querySelector('input[name$="[name]"]');
+            const taskRateInput = taskGroup.querySelector('input[name$="[task_rate]"]');
+            if (taskNameInput && taskNameInput.value) {
+                const task = {
+                    name: taskNameInput.value
+                };
+                // Only include task_rate if rate_type is 'task' and input has a value
+                if (projectData.rate_type === 'task' && taskRateInput && taskRateInput.value) {
+                    task.task_rate = parseFloat(taskRateInput.value);
+                } else {
+                    // Ensure task_rate is not sent if not applicable or empty
+                    delete task.task_rate;
+                }
+                tasks.push(task);
+            }
+        });
+        projectData.tasks = tasks;
+
+        try {
+            const response = await fetch("{{ url_for('create_project') }}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(projectData),
+            });
+
+            if (response.ok) {
+                showMessage('Project added successfully!', 'success');
+                const addProjectModal = bootstrap.Modal.getInstance(document.getElementById('addProjectModal'));
+                addProjectModal.hide(); // Hide the modal on success
+                event.target.reset(); // Reset the form fields
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                const errorData = await response.json();
+                console.error('Full error data:', errorData); // Log the full error for debugging
+                let errorMessage = 'Error adding project: ';
+                if (errorData.detail) {
+                    errorMessage += errorData.detail.map(err => `${err.loc.join('.')} - ${err.msg}`).join('; ');
+                } else {
+                    errorMessage += response.statusText;
+                }
+                showMessage(errorMessage, 'error');
+            }
+        } catch (error) {
+            console.error('Fetch error:', error);
+            showMessage('An unexpected error occurred.', 'error');
+        }
+    });
+
+    // Add Task button for new project form
+    document.getElementById('addTaskBtn').addEventListener('click', () => addTaskInputGroup('addTasksContainer', 'tasks'));
+
+
+    // Edit Project Logic
+    document.querySelectorAll('.edit-project-btn').forEach(button => {
+        button.addEventListener('click', async function () {
+            const projectId = this.dataset.id;
+            try {
+                const response = await fetch(`{{ url_for('get_project_by_id', project_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', projectId));
+                if (response.ok) {
+                    const project = await response.json();
+                    console.log('Project data received for edit:', project); // Log the full project object
+                    console.log('Tasks for edit:', project.tasks); // Log the tasks array
+                    document.getElementById('editProjectId').value = project.id;
+                    document.getElementById('editName').value = project.name;
+                    await populateCustomerDropdowns(project.customer_id); // Populate and select customer
+                    document.getElementById('editProjectType').value = project.project_type || '';
+                    document.getElementById('editStartDate').value = project.start_date ? project.start_date.split('T')[0] : '';
+                    document.getElementById('editEndDate').value = project.end_date ? project.end_date.split('T')[0] : '';
+                    document.getElementById('editBudget').value = project.budget || '';
+                    document.getElementById('editBudgetUnit').value = project.budget_unit || '';
+                    document.getElementById('editRateType').value = project.rate_type || '';
+                    document.getElementById('editProjectRate').value = project.project_rate || '';
+                    document.getElementById('editDescription').value = project.description || '';
+                    document.getElementById('editIsArchived').checked = project.is_archived;
+
+                    // Clear existing tasks in the edit modal
+                    document.getElementById('editTasksContainer').innerHTML = '';
+                    // Add existing tasks to the edit form
+                    if (project.tasks && project.tasks.length > 0) { // Ensure tasks array exists and is not empty
+                        for (const task of project.tasks) { // Use for...of for async operations
+                            await addTaskInputGroup('editTasksContainer', 'tasks', task); // Pass task data
+                        }
+                    } else {
+                        // If no tasks, add one default task input for editing
+                        addTaskInputGroup('editTasksContainer', 'tasks');
+                    }
+                    updateRateFieldsVisibility(); // Update visibility after populating tasks
+
+                    const editProjectModal = new bootstrap.Modal(document.getElementById('editProjectModal'));
+                    editProjectModal.show();
+                } else {
+                    const errorData = await response.json();
+                    showMessage('Error fetching project data: ' + (errorData.detail || response.statusText), 'error');
+                }
+            }
+            catch (error) {
+                console.error('Error:', error);
+                showMessage('An unexpected error occurred while fetching project data.', 'error');
+            }
+        });
+    });
+
+    // Add New Task button for edit project form
+    document.getElementById('editAddTaskBtn').addEventListener('click', () => addTaskInputGroup('editTasksContainer', 'tasks'));
+
+
+    // Save Changes (Edit Project Form)
+    document.getElementById('editProjectForm').addEventListener('submit', async function (event) {
+        event.preventDefault();
+        const projectId = document.getElementById('editProjectId').value;
+        const formData = new FormData(event.target);
+        const projectData = Object.fromEntries(formData.entries());
+
+        projectData.customer_id = parseInt(projectData.customer_id);
+        projectData.budget = projectData.budget ? parseFloat(projectData.budget) : null;
+        projectData.project_rate = projectData.project_rate ? parseFloat(projectData.project_rate) : null;
+        projectData.is_archived = formData.has('is_archived');
+
+        if (!projectData.start_date) delete projectData.start_date;
+        if (!projectData.end_date) delete projectData.end_date;
+
+        // Conditional removal of project_rate for non_billable projects
+        if (projectData.project_type === 'non_billable') {
+            delete projectData.project_rate;
+        }
+        // Conditional removal of project_rate if rate_type is 'task'
+        if (projectData.rate_type === 'task') {
+            delete projectData.project_rate;
+        }
+
+        // Collect tasks from the edit form
+        const tasks = [];
+        document.querySelectorAll('#editTasksContainer .task-input-group').forEach(taskGroup => {
+            const taskIdInput = taskGroup.querySelector('input[name$="[id]"]');
+            const taskNameInput = taskGroup.querySelector('input[name$="[name]"]');
+            const taskRateInput = taskGroup.querySelector('input[name$="[task_rate]"]');
+
+            if (taskNameInput && taskNameInput.value) {
+                const task = {
+                    name: taskNameInput.value
+                };
+                if (taskIdInput && taskIdInput.value) {
+                    task.id = parseInt(taskIdInput.value); // Include ID for existing tasks
+                }
+                // Only include task_rate if rate_type is 'task' and input has a value
+                if (projectData.rate_type === 'task' && taskRateInput && taskRateInput.value) {
+                    task.task_rate = parseFloat(taskRateInput.value);
+                } else {
+                    // Ensure task_rate is not sent if not applicable or empty
+                    delete task.task_rate;
+                }
+                tasks.push(task);
+            }
+        });
+        projectData.tasks = tasks; // Assign collected tasks to projectData
+
+        try {
+            const response = await fetch(`{{ url_for('update_project', project_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', projectId), {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(projectData),
+            });
+
+            if (response.ok) {
+                showMessage('Project updated successfully!', 'success');
+                const editProjectModal = bootstrap.Modal.getInstance(document.getElementById('editProjectModal'));
+                editProjectModal.hide();
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                const errorData = await response.json();
+                console.error('Error updating project:', errorData);
+                let errorMessage = 'Error updating project: ';
+                if (errorData.detail) {
+                    if (Array.isArray(errorData.detail)) {
+                        errorMessage += errorData.detail.map(err => `${err.loc.join('.')} - ${err.msg}`).join('; ');
+                    } else {
+                        errorMessage += errorData.detail;
+                    }
+                } else {
+                    errorMessage += response.statusText;
+                }
+                showMessage(errorMessage, 'error');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            showMessage('An unexpected error occurred while updating project.', 'error');
+        }
+    });
+
+    // Delete Project Logic
+    document.querySelectorAll('.delete-project-btn').forEach(button => {
+        button.addEventListener('click', async function () {
+            const projectId = this.dataset.id;
+            if (confirm("Are you sure you want to delete this project? This action cannot be undone.")) {
+                try {
+                    const response = await fetch(`{{ url_for('delete_project', project_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', projectId), {
+                        method: 'DELETE',
+                    });
+
+                    if (response.ok) {
+                        showMessage('Project deleted successfully!', 'success');
+                        setTimeout(() => window.location.reload(), 1000);
+                    } else {
+                        const errorData = await response.json();
+                        showMessage('Error deleting project: ' + (errorData.detail || response.statusText), 'error');
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    showMessage('An unexpected error occurred while deleting project.', 'error');
+                }
+            }
+        });
+    });
+
+    // Toggle Archived Projects
+    document.getElementById('showArchivedProjects').addEventListener('change', function () {
+        const showArchived = this.checked;
+        const currentUrl = new URL(window.location.href);
+        if (showArchived) {
+            currentUrl.searchParams.set('show_archived', 'true');
+        } else {
+            currentUrl.searchParams.delete('show_archived');
+        }
+        window.location.href = currentUrl.toString();
+    });
+</script>
+{% endblock %}

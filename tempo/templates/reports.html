@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .loading-spinner {
+        display: none;
+        width: 50px;
+        height: 50px;
+        border: 5px solid #f3f3f3;
+        border-top: 5px solid #3498db;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin: 20px auto;
+    }
+
+    @keyframes spin {
+        0% {
+            transform: rotate(0deg);
+        }
+
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+</style>
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>QuickBooks Report</h1>
+            <button id="exportCsvBtn" class="btn btn-primary" disabled>Export to CSV</button>
+        </div>
+        <div class="loading-spinner" id="loadingSpinner"></div>
+        <div id="reportContent" style="display: none;">
+            <p>This report generates a list of all invoices in a format suitable for import into accounting software
+                like QuickBooks.</p>
+            <table class="table table-striped table-hover mt-4" id="reportTable">
+                <thead>
+                    <tr>
+                        <th>Invoice No</th>
+                        <th>Invoice Date</th>
+                        <th>Due Date</th>
+                        <th>Customer</th>
+                        <th>Item</th>
+                        <th>Description</th>
+                        <th>Quantity</th>
+                        <th>Rate</th>
+                        <th>Amount</th>
+                    </tr>
+                </thead>
+                <tbody id="reportTableBody">
+                    <!-- Data will be populated here by JavaScript -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const loadingSpinner = document.getElementById('loadingSpinner');
+        const reportContent = document.getElementById('reportContent');
+        const reportTableBody = document.getElementById('reportTableBody');
+        const exportCsvBtn = document.getElementById('exportCsvBtn');
+
+        let allInvoicesData = []; // Store the fetched data globally
+
+        async function fetchInvoices() {
+            loadingSpinner.style.display = 'block';
+            reportContent.style.display = 'none';
+            exportCsvBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/invoices/for-quickbooks');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const invoices = await response.json();
+                allInvoicesData = invoices;
+                renderReportTable(invoices);
+                exportCsvBtn.disabled = false;
+            } catch (error) {
+                console.error("Error fetching invoices:", error);
+                // Optionally show an error message on the page
+                reportTableBody.innerHTML = `<tr><td colspan="9" class="text-danger">Failed to load report data. Please try again.</td></tr>`;
+            } finally {
+                loadingSpinner.style.display = 'none';
+                reportContent.style.display = 'block';
+            }
+        }
+
+        function renderReportTable(invoices) {
+            reportTableBody.innerHTML = '';
+            if (invoices.length === 0) {
+                reportTableBody.innerHTML = `<tr><td colspan="9" class="text-center">No invoices found.</td></tr>`;
+                return;
+            }
+
+            invoices.forEach(invoice => {
+                invoice.lineItems.forEach(lineItem => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${invoice.invoiceNo}</td>
+                        <td>${invoice.invoiceDate}</td>
+                        <td>${invoice.dueDate}</td>
+                        <td>${invoice.customer}</td>
+                        <td>${lineItem.item}</td>
+                        <td>${lineItem.description}</td>
+                        <td>${lineItem.quantity}</td>
+                        <td>${lineItem.rate}</td>
+                        <td>${lineItem.amount}</td>
+                    `;
+                    reportTableBody.appendChild(row);
+                });
+            });
+        }
+
+        function exportToCsv() {
+            let csvContent = "data:text/csv;charset=utf-8,";
+
+            // Add headers
+            const headers = [
+                "InvoiceNo", "InvoiceDate", "DueDate", "Customer",
+                "Item", "Description", "Quantity", "Rate", "Amount"
+            ];
+            csvContent += headers.join(",") + "\n";
+
+            // Add rows
+            allInvoicesData.forEach(invoice => {
+                invoice.lineItems.forEach(lineItem => {
+                    const row = [
+                        invoice.invoiceNo,
+                        invoice.invoiceDate,
+                        invoice.dueDate,
+                        invoice.customer,
+                        lineItem.item,
+                        lineItem.description,
+                        lineItem.quantity,
+                        lineItem.rate,
+                        lineItem.amount
+                    ].map(field => `"${field}"`).join(","); // Wrap fields in quotes to handle commas
+                    csvContent += row + "\n";
+                });
+            });
+
+            // Create and download the CSV file
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "quickbooks_report.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        exportCsvBtn.addEventListener('click', exportToCsv);
+
+        // Initial fetch of data
+        fetchInvoices();
+    });
+</script>
+{% endblock %}

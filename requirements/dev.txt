@@ -1,0 +1,11 @@
+-r test.txt
+
+bump2version
+wheel
+watchdog
+flake8
+tox
+coverage
+Sphinx
+black
+isort

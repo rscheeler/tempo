@@ -1,0 +1,950 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container my-5 p-4 bg-white rounded shadow-lg printable-invoice">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        {# NEW: Invoice title with record number #}
+        <h1 class="mb-0 text-primary">INVOICE {{ invoice.record_number }}</h1>
+        <div class="d-flex align-items-center flex-wrap gap-2">
+            {# Edit Invoice Button - only enabled for 'draft' #}
+            <button type="button" class="btn btn-warning edit-button" data-bs-toggle="modal"
+                data-bs-target="#editInvoiceModal" {% if invoice.status !='draft' %} disabled
+                title="Only 'draft' invoices can be edited." {% endif %}>
+                <i class="fas fa-edit me-2"></i>Edit Invoice
+            </button>
+
+            {# Actions Dropdown #}
+            <div class="dropdown">
+                <button class="btn btn-secondary dropdown-toggle" type="button" id="actionsDropdown"
+                    data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fas fa-ellipsis-h me-2"></i>Actions
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="actionsDropdown">
+                    {# Mark as Sent Option - visible if 'draft' #}
+                    {% if invoice.status == 'draft' %}
+                    <li><a class="dropdown-item mark-as-sent-button" href="#" data-invoice-id="{{ invoice.id }}">
+                            <i class="fas fa-paper-plane me-2"></i>Mark as Sent
+                        </a></li>
+                    {% endif %}
+
+                    {# Mark as Paid Option - visible if not 'paid' or 'void' #}
+                    {% if invoice.status != 'paid' and invoice.status != 'void' %}
+                    <li><a class="dropdown-item mark-as-paid-button" href="#" data-invoice-id="{{ invoice.id }}">
+                            <i class="fas fa-dollar-sign me-2"></i>Mark as Paid
+                        </a></li>
+                    {% endif %}
+
+                    {# Mark as Void Option - visible if not 'void' #}
+                    {% if invoice.status != 'void' %}
+                    <li><a class="dropdown-item mark-as-void-button" href="#" data-invoice-id="{{ invoice.id }}">
+                            <i class="fas fa-ban me-2"></i>Mark as Void
+                        </a></li>
+                    {% endif %}
+
+                    {# Add a separator before delete if other actions are present #}
+                    {% if invoice.status == 'draft' or (invoice.status != 'paid' and invoice.status != 'void') or
+                    invoice.status != 'void' %}
+                    <li>
+                        <hr class="dropdown-divider">
+                    </li>
+                    {% endif %}
+
+                    {# Delete Invoice Option - visible if 'draft' #}
+                    {% if invoice.status == 'draft' %}
+                    <li><a class="dropdown-item text-danger delete-invoice-button" href="#"
+                            data-invoice-id="{{ invoice.id }}">
+                            <i class="fas fa-trash-alt me-2"></i>Delete Invoice
+                        </a></li>
+                    {% endif %}
+                </ul>
+            </div>
+            {# END Actions Dropdown #}
+
+            <button class="btn btn-secondary print-button" onclick="window.print()">
+                <i class="fas fa-print me-2"></i>Print Invoice
+            </button>
+        </div>
+    </div>
+
+    <hr class="mb-4">
+
+    {# NEW LAYOUT: Top row - Invoice Title & Details #}
+    <div class="row mb-5">
+        {% if logo and logo | length > 0 %}
+        <img src="{{ url_for('static', path='user_assets/' + logo) }}" class="img-fluid rounded-start"
+            alt="{{ companyname }} Logo" style="max-width: 300px;">
+        {% else %}
+        <h2 class="brand-text">{{ companyname }}</h2>
+        {% endif %}
+        <div class="col-md-6"> {# Right column for invoice details #}
+            <h5 class="text-secondary">Invoice Details:</h5>
+            <p class="mb-0"><strong>Invoice Date:</strong> {{ invoice.invoice_date }}</p>
+            <p class="mb-0"><strong>Due Date:</strong> {{ invoice.due_date }}</p>
+            <p class="mb-0"><strong>Status:</strong>
+                <span class="badge invoice-status-badge
+                    {% if invoice.status == 'draft' %}bg-info
+                    {% elif invoice.status == 'sent' %}bg-primary
+                    {% elif invoice.status == 'paid' %}bg-success
+                    {% elif invoice.status == 'void' %}bg-danger
+                    {% else %}bg-secondary{% endif %}">
+                    {{ invoice.status }}
+                </span>
+            </p>
+            <p class="mb-0"><strong>PO Number:</strong> {{ invoice.po_number or 'N/A' }}</p>
+        </div>
+    </div>
+
+    {# NEW LAYOUT: Second row - Bill To #}
+    <div class="row mb-5">
+        <div class="col-md-6"> {# Left column for logo and company info #}
+            <h5 class="text-secondary">From:</h5>
+            <p class="mb-0"><strong>{{ companyname }}</strong></p>
+            <p class="mb-0">{{ companyaddress | nl2br | safe }}</p>
+            <p class="mb-0">Phone: {{ companyphone }}</p>
+            <p class="mb-0">Email: {{ billingemail }}</p>
+        </div>
+        <div class="col-md-6"> {# Left column for Bill To #}
+            <h5 class="text-secondary">Bill To:</h5>
+            <p class="mb-0"><strong>{{ invoice.customer.name }}</strong></p>
+            <p class="mb-0">{{ invoice.customer.address | nl2br | safe or 'N/A' }}</p>
+            <p class="mb-0">Phone: {{ invoice.customer.phone or 'N/A' }}</p>
+            <p class="mb-0">Email: {{ invoice.customer.email or 'N/A' }}</p>
+        </div>
+    </div>
+
+
+    <h5 class="mb-3 text-secondary">Invoice Items:</h5>
+    <div class="table-responsive mb-5">
+        <table class="table table-bordered table-striped invoice-items-table"> {# Added invoice-items-table class #}
+            <thead class="bg-light">
+                <tr>
+                    <th class="col-index">#</th>
+                    <th class="col-project">Project</th>
+                    <th class="col-task">Task</th>
+                    <th class="col-quantity text-end">Quantity</th> {# Removed (Hours) #}
+                    <th class="col-rate text-end">Rate</th>
+                    <th class="col-total text-end">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in invoice_items %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>{{ item.project_name }}</td>
+                    <td>{{ item.task_name }}</td>
+                    <td class="text-end">{{ item.quantity_hours | currency }}</td>
+                    <td class="text-end">${{ item.rate | currency }}</td>
+                    <td class="text-end">${{ item.total_amount | currency }}</td>
+                </tr>
+                {% endfor %}
+                {% set subtotal = invoice_items | sum(attribute='total_amount') %}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <th colspan="5" class="text-end">Subtotal:</th>
+                    <th class="text-end">${{ subtotal | currency }}</th>
+                </tr>
+                <tr>
+                    <th colspan="5" class="text-end text-primary fs-5">Total Amount Due:</th>
+                    <th class="text-end text-primary fs-5">${{ invoice.total_amount | currency }}</th>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+
+    {% if invoice.notes %}
+    <h5 class="mb-3 text-secondary">Notes:</h5>
+    <p class="mb-4">{{ invoice.notes | nl2br | safe}}</p>
+    {% endif %}
+
+    <div class="text-center mt-5">
+        <p class="text-muted">Thank you for your business!</p>
+    </div>
+</div>
+
+{# NEW: Non-printable section for detailed time entries #}
+<div class="container my-5 p-4 bg-light rounded shadow-lg non-printable-time-entries">
+    <h2 class="mb-4 text-primary">Detailed Time Entries</h2>
+    <div class="table-responsive">
+        <table class="table table-bordered table-striped">
+            <thead class="bg-dark text-white">
+                <tr>
+                    <th>Date</th>
+                    <th>User</th>
+                    <th>Project</th>
+                    <th>Task</th>
+                    <th class="text-end">Hours</th>
+                    <th class="text-end">Rate</th> {# NEW #}
+                    <th class="text-end">Total</th> {# NEW #}
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody id="detailedTimeEntriesTableBody">
+                {# Time entries will be loaded here by JavaScript #}
+            </tbody>
+        </table>
+    </div>
+</div>
+{# END NEW SECTION #}
+
+{# Edit Invoice Modal #}
+<div class="modal fade" id="editInvoiceModal" tabindex="-1" aria-labelledby="editInvoiceModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl"> {# Increased modal size #}
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="editInvoiceModalLabel">Edit Invoice #{{ invoice.record_number }}</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                    aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editInvoiceForm">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="editCustomerId" class="form-label">Customer</label>
+                                <select class="form-select" id="editCustomerId" name="customer_id" required {% if
+                                    invoice.status !='draft' %}readonly disabled{% endif %}> {# Added readonly/disabled
+                                    #}
+                                    {% for customer in customers %}
+                                    <option value="{{ customer.id }}" {% if customer.id==invoice.customer_id
+                                        %}selected{% endif %}>{{ customer.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label for="editProjectId" class="form-label">Project (Optional)</label>
+                                <select class="form-select" id="editProjectId" name="project_id" {% if invoice.status
+                                    !='draft' %}readonly disabled{% endif %}> {# Added readonly/disabled #}
+                                    <option value="">-- No Specific Project --</option>
+                                    {% for project in projects %}
+                                    <option value="{{ project.id }}" {% if project.id==invoice.project_id %}selected{%
+                                        endif %}>{{ project.name }} ({{ project.customer.name }})</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="editInvoiceDate" class="form-label">Invoice Date</label>
+                                    <input type="date" class="form-control" id="editInvoiceDate" name="invoice_date"
+                                        value="{{ invoice.invoice_date }}" required {% if invoice.status !='draft'
+                                        %}readonly{% endif %}> {# Added readonly #}
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="editDueDate" class="form-label">Due Date</label>
+                                    <input type="date" class="form-control" id="editDueDate" name="due_date"
+                                        value="{{ invoice.due_date }}" required {% if invoice.status !='draft'
+                                        %}readonly{% endif %}> {# Added readonly #}
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="editPoNumber" class="form-label">PO Number</label>
+                                <input type="text" class="form-control" id="editPoNumber" name="po_number"
+                                    value="{{ invoice.po_number or '' }}" {% if invoice.status !='draft' %}readonly{%
+                                    endif %}> {# Added readonly #}
+                            </div>
+                            <div class="mb-3">
+                                <label for="editStatus" class="form-label">Status</label>
+                                <select class="form-select" id="editStatus" name="status" required {% if invoice.status
+                                    !='draft' %}readonly disabled{% endif %}> {# Added readonly/disabled #}
+                                    {% for status_option in invoice_statuses %}
+                                    <option value="{{ status_option }}" {% if status_option==invoice.status %}selected{%
+                                        endif %}>{{ status_option | title }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label for="editNotes" class="form-label">Notes</label>
+                                <textarea class="form-control" id="editNotes" name="notes" rows="3" {% if invoice.status
+                                    !='draft' %}readonly{% endif %}>{{ invoice.notes or '' }}</textarea> {# Added
+                                readonly #}
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <h5 class="mt-4 mb-3">Select Time Entries:</h5>
+                            <div class="alert alert-info text-center" role="alert" id="editLoadingEntriesMessage"
+                                style="display: none;">
+                                Loading time entries...
+                            </div>
+                            <div class="alert alert-warning text-center" role="alert" id="editNoEntriesMessage"
+                                style="display: none;">
+                                No unbilled time entries found for this customer.
+                            </div>
+                            <div class="table-responsive"
+                                style="max-height: 400px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: .25rem;">
+                                <table class="table table-striped table-hover table-sm mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th><input type="checkbox" id="editSelectAllEntries" {% if invoice.status
+                                                    !='draft' %}disabled{% endif %}></th> {# Disabled checkbox #}
+                                            <th>Date</th>
+                                            <th>Project</th>
+                                            <th>Task</th>
+                                            <th class="text-end">Hours</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="editTimeEntriesTableBody">
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="mt-2 text-end">
+                                <strong>Selected Total:</strong> <span id="editSelectedTotalHours">0.00</span> hrs
+                            </div>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary mt-4" {% if invoice.status !='draft' %}disabled
+                        title="Invoice must be in 'draft' status to save changes." {% endif %}>Save Changes</button> {#
+                    Disabled save button #}
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Custom Confirmation Modal (for Delete and Void) #}
+<div class="modal fade" id="confirmationModal" tabindex="-1" aria-labelledby="confirmationModalLabel"
+    aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="confirmationModalLabel">Confirm Action</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                    aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="confirmationMessage">
+                Are you sure you want to perform this action?
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmActionButton">Confirm</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    @media print {
+        body * {
+            visibility: hidden;
+        }
+
+        .printable-invoice,
+        .printable-invoice * {
+            visibility: visible;
+        }
+
+        .printable-invoice {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            /* Remove Bootstrap container max-width for print */
+            max-width: none !important;
+            margin: 0 !important;
+            padding: 20px !important;
+            /* Keep some padding */
+            box-shadow: none !important;
+            /* NEW: No shadow in print */
+            border-radius: 0;
+        }
+
+        /* Hide buttons and other non-print elements */
+        .print-button,
+        .edit-button,
+        .mark-as-sent-button,
+        .mark-as-paid-button,
+        .mark-as-void-button,
+        .delete-invoice-button,
+        .modal-backdrop,
+        .modal,
+        .dropdown,
+        .dropdown-menu,
+        .non-printable-time-entries {
+            /* NEW: Hide this section during print */
+            display: none !important;
+        }
+
+        /* NEW: Hide status badge in print */
+        .invoice-status-badge {
+            display: none !important;
+        }
+
+        /* Adjust font size for better readability on print if needed */
+        body {
+            font-size: 10pt;
+        }
+
+        h1,
+        h5 {
+            font-size: 14pt;
+        }
+
+        table {
+            font-size: 9pt;
+        }
+
+        /* NEW: Force col-md-6 for print */
+        .printable-invoice .row>.col-md-6 {
+            flex: 0 0 auto;
+            /* Prevent shrinking */
+            width: 50%;
+            /* Force 2 columns */
+            max-width: 50%;
+            float: left;
+            /* Ensure they line up */
+            /* Re-add some padding if Bootstrap removes it, adjust as needed */
+            padding-right: 15px;
+            padding-left: 15px;
+        }
+
+        /* Clearfix for the row containing these columns */
+        .printable-invoice .row::after {
+            content: "";
+            display: table;
+            clear: both;
+        }
+
+        /* NEW: Table column width adjustments for print */
+        .invoice-items-table {
+            table-layout: fixed;
+            /* Ensures columns respect set widths */
+            width: 100%;
+        }
+
+        .invoice-items-table th.col-index,
+        .invoice-items-table td:nth-child(1) {
+            /* # column */
+            width: 5%;
+        }
+
+        .invoice-items-table th.col-project,
+        .invoice-items-table td:nth-child(2) {
+            /* Project column */
+            width: 30%;
+            /* Wider */
+        }
+
+        .invoice-items-table th.col-task,
+        .invoice-items-table td:nth-child(3) {
+            /* Task column */
+            width: 30%;
+            /* Wider */
+        }
+
+        .invoice-items-table th.col-quantity,
+        .invoice-items-table td:nth-child(4) {
+            /* Quantity column */
+            width: 15%;
+            /* Narrower */
+        }
+
+        .invoice-items-table th.col-rate,
+        .invoice-items-table td:nth-child(5) {
+            /* Rate column */
+            width: 10%;
+        }
+
+        .invoice-items-table th.col-total,
+        .invoice-items-table td:nth-child(6) {
+            /* Total column */
+            width: 10%;
+        }
+
+        /* NEW: Logo styling for print */
+        .invoice-logo {
+            max-width: 120px;
+            /* Adjust size as needed for print */
+            height: auto;
+            display: block;
+            /* Ensure it takes its own line */
+            margin-bottom: 10px;
+        }
+    }
+</style>
+
+{# Hidden script tags to safely pass JSON data to JavaScript #}
+<script type="application/json" id="invoice-data">{{ invoice_json_string | safe }}</script>
+<script type="application/json" id="projects-data">{{ projects_json_string | safe }}</script>
+<script type="application/json" id="users-data">{{ users_json_string | safe }}</script>
+
+
+<script>
+    // Helper function to show messages (from base.html)
+    function showMessage(message, type = 'success') {
+        const messageDiv = document.getElementById('appMessage');
+        if (messageDiv) {
+            messageDiv.textContent = message;
+            messageDiv.className = `app-message show ${type}`;
+            setTimeout(() => {
+                messageDiv.classList.remove('show');
+            }, 3000);
+        } else {
+            console.warn('App message container not found. Message:', message);
+        }
+    }
+
+    // Helper function to format currency (ensure it's available)
+    function formatCurrency(value) {
+        if (value === null || value === undefined) {
+            return '0.00';
+        }
+        return parseFloat(value).toFixed(2);
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        // Safely parse JSON data from hidden script tags
+        const invoiceData = JSON.parse(document.getElementById('invoice-data').textContent);
+        const allProjects = JSON.parse(document.getElementById('projects-data').textContent);
+        const allUsers = JSON.parse(document.getElementById('users-data').textContent);
+
+        const invoiceId = invoiceData.id;
+        const invoiceCustomerId = invoiceData.customer_id;
+
+        // currentLinkedTimeEntryIds will be derived from invoiceData.time_entries
+        const currentLinkedTimeEntryIds = new Set(invoiceData.time_entries.map(entry => entry.id));
+        console.log('Invoice Data:', invoiceData);
+        console.log('Current Linked Time Entry IDs:', Array.from(currentLinkedTimeEntryIds));
+        console.log('All Projects (from Jinja):', allProjects);
+        console.log('All Users (from Jinja):', allUsers);
+
+
+        const editInvoiceModalElement = document.getElementById('editInvoiceModal');
+        const editInvoiceForm = document.getElementById('editInvoiceForm');
+        const editCustomerIdSelect = document.getElementById('editCustomerId');
+        const editTimeEntriesTableBody = document.getElementById('editTimeEntriesTableBody');
+        const editSelectAllEntriesCheckbox = document.getElementById('editSelectAllEntries');
+        const editSelectedTotalHoursSpan = document.getElementById('editSelectedTotalHours');
+        const editLoadingEntriesMessage = document.getElementById('editLoadingEntriesMessage');
+        const editNoEntriesMessage = document.getElementById('editNoEntriesMessage');
+        const detailedTimeEntriesTableBody = document.getElementById('detailedTimeEntriesTableBody'); // NEW
+
+        // Get the invoice status from the parsed data
+        const invoiceStatus = invoiceData.status;
+        const isInvoiceEditable = invoiceStatus === 'draft';
+        console.log('Invoice Status:', invoiceStatus, 'Is Editable:', isInvoiceEditable);
+
+        // NEW: Disable form elements if not editable (applies to initial load)
+        if (!isInvoiceEditable) {
+            editInvoiceForm.querySelectorAll('input, select, textarea, button[type="submit"]').forEach(element => {
+                element.setAttribute('readonly', 'true');
+                element.setAttribute('disabled', 'true');
+            });
+            // Specific handling for checkboxes in the time entries table
+            editTimeEntriesTableBody.addEventListener('change', function (event) {
+                if (event.target.classList.contains('edit-entry-checkbox')) {
+                    event.target.disabled = true; // Ensure they can't be re-enabled by user interaction
+                }
+            });
+        }
+
+
+        let allAvailableTimeEntries = []; // Stores all time entries available for selection (unbilled + currently linked)
+
+        // Function to fetch and render time entries for the edit modal
+        async function fetchAndRenderEditTimeEntries(customerId, initiallyLinkedIds) {
+            console.log('--- fetchAndRenderEditTimeEntries called ---');
+            console.log('Customer ID for fetch:', customerId);
+            console.log('Initially Linked IDs:', Array.from(initiallyLinkedIds));
+
+            editLoadingEntriesMessage.style.display = 'block';
+            editNoEntriesMessage.style.display = 'none';
+            editTimeEntriesTableBody.innerHTML = '';
+            allAvailableTimeEntries = [];
+            editSelectedTotalHoursSpan.textContent = '0.00';
+            editSelectAllEntriesCheckbox.checked = false;
+
+            try {
+                // Fetch unbilled entries for the customer
+                const unbilledResponse = await fetch(`/api/invoices/unbilled_entries?customer_id=${customerId}`);
+                if (!unbilledResponse.ok) {
+                    const errorText = await unbilledResponse.text();
+                    throw new Error(`Failed to fetch unbilled entries: ${unbilledResponse.status} ${unbilledResponse.statusText} - ${errorText}`);
+                }
+                const unbilledEntries = await unbilledResponse.json();
+                console.log('Unbilled entries fetched:', unbilledEntries);
+
+                // Combine unbilled entries with currently linked entries for this invoice
+                let combinedEntries = [...unbilledEntries];
+
+                // Add currently linked entries if they are not already in unbilled
+                const currentlyLinkedEntriesFromInvoice = invoiceData.time_entries; // Already a JS array
+                console.log('Currently linked entries from invoiceData:', currentlyLinkedEntriesFromInvoice);
+
+                currentlyLinkedEntriesFromInvoice.forEach(linkedEntry => {
+                    if (!combinedEntries.some(e => e.id === linkedEntry.id)) {
+                        // Reconstruct linkedEntry to match the structure of unbilled entries for consistency
+                        // Find project and task details from the pre-loaded allProjects data
+                        const project = allProjects.find(p => p.id === linkedEntry.project_id);
+                        // Access tasks from the found project, if available
+                        const task = project && project.tasks ? project.tasks.find(t => t.id === linkedEntry.task_id) : null;
+                        const user = allUsers.find(u => u.id === linkedEntry.user_id);
+
+                        // Calculate entry_rate and entry_dollars for linked entries
+                        let entry_rate = 0.0;
+                        if (project && project.rate_type === 'project' && project.project_rate !== null) {
+                            entry_rate = project.project_rate;
+                        } else if (task && project && project.rate_type === 'task' && task.task_rate !== null) {
+                            entry_rate = task.task_rate;
+                        }
+                        const entry_dollars = (linkedEntry.hours || 0) * entry_rate;
+
+                        combinedEntries.push({
+                            id: linkedEntry.id,
+                            date: linkedEntry.date,
+                            hours: linkedEntry.hours,
+                            notes: linkedEntry.notes,
+                            user_id: linkedEntry.user_id,
+                            user_name: user ? user.name : 'N/A',
+                            project_id: linkedEntry.project_id,
+                            project_name: project ? project.name : 'N/A',
+                            task_id: linkedEntry.task_id,
+                            task_name: task ? task.name : 'N/A',
+                            entry_dollars: entry_dollars,
+                            entry_rate: entry_rate,
+                            entry_rate_type: project ? project.rate_type : 'N/A',
+                            customer_id: project ? project.customer_id : null,
+                            customer_name: project && project.customer ? project.customer.name : 'N/A'
+                        });
+                    }
+                });
+
+                // Sort combined entries by date
+                allAvailableTimeEntries = combinedEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
+                console.log('Final allAvailableTimeEntries (sorted):', allAvailableTimeEntries);
+
+
+                if (allAvailableTimeEntries.length === 0) {
+                    editNoEntriesMessage.style.display = 'block';
+                    console.log('No entries to display.');
+                } else {
+                    allAvailableTimeEntries.forEach(entry => {
+                        const row = editTimeEntriesTableBody.insertRow();
+                        // Check if the entry is currently linked to THIS invoice or was pre-selected
+                        const isCurrentlyLinked = initiallyLinkedIds.has(entry.id);
+                        row.innerHTML = `
+                            <td><input type="checkbox" class="edit-entry-checkbox" value="${entry.id}" ${isCurrentlyLinked ? 'checked' : ''} ${!isInvoiceEditable ? 'disabled' : ''}></td>
+                            <td>${entry.date}</td>
+                            <td>${entry.project_name}</td>
+                            <td>${entry.task_name}</td>
+                            <td class="text-end">${formatCurrency(entry.hours)}</td>
+                        `;
+                    });
+                    updateEditSelectedTotals(); // Initial total calculation
+                    console.log('Entries rendered successfully.');
+                }
+            } catch (error) {
+                console.error('Error fetching time entries for edit modal:', error);
+                showMessage('Error loading time entries for editing: ' + error.message, 'error');
+                editNoEntriesMessage.style.display = 'block';
+            } finally {
+                editLoadingEntriesMessage.style.display = 'none';
+                console.log('--- fetchAndRenderEditTimeEntries finished ---');
+            }
+        }
+
+        // Update totals in edit modal
+        function updateEditSelectedTotals() {
+            let totalHours = 0.0;
+            document.querySelectorAll('.edit-entry-checkbox:checked').forEach(checkbox => {
+                const entryId = parseInt(checkbox.value);
+                const entry = allAvailableTimeEntries.find(e => e.id === entryId);
+                if (entry) {
+                    totalHours += entry.hours || 0;
+                }
+            });
+            editSelectedTotalHoursSpan.textContent = formatCurrency(totalHours);
+        }
+
+        // Event listener for "Select All" checkbox in edit modal
+        editSelectAllEntriesCheckbox.addEventListener('change', function () {
+            document.querySelectorAll('.edit-entry-checkbox').forEach(checkbox => {
+                checkbox.checked = this.checked;
+            });
+            updateEditSelectedTotals();
+        });
+
+        // Event listener for individual checkboxes in edit modal (delegated)
+        editTimeEntriesTableBody.addEventListener('change', function (event) {
+            if (event.target.classList.contains('edit-entry-checkbox')) {
+                updateEditSelectedTotals();
+            }
+        });
+
+        // When the edit modal is shown, fetch and populate time entries
+        editInvoiceModalElement.addEventListener('show.bs.modal', async function () {
+            // Use the invoice's customer ID and its currently linked entries for initial load
+            await fetchAndRenderEditTimeEntries(editCustomerIdSelect.value, currentLinkedTimeEntryIds);
+        });
+
+        // Handle customer change in edit modal (re-fetch time entries)
+        editCustomerIdSelect.addEventListener('change', async function () {
+            // When customer changes, clear previous selection and fetch for the new customer
+            // Pass an empty Set for initiallyLinkedIds as we're changing customer context
+            await fetchAndRenderEditTimeEntries(this.value, new Set());
+        });
+
+
+        // Handle Edit Invoice Form submission
+        editInvoiceForm.addEventListener('submit', async function (event) {
+            event.preventDefault();
+
+            // Prevent submission if not editable
+            if (!isInvoiceEditable) {
+                showMessage("Invoice cannot be updated. Only 'draft' invoices can be fully edited.", 'error');
+                return;
+            }
+
+            const formData = new FormData(editInvoiceForm);
+            const data = {};
+            formData.forEach((value, key) => {
+                if (value === '') {
+                    data[key] = null;
+                } else {
+                    data[key] = value;
+                }
+            });
+
+            // Collect selected time entry IDs
+            const selectedTimeEntryIds = Array.from(document.querySelectorAll('.edit-entry-checkbox:checked'))
+                .map(cb => parseInt(cb.value));
+            data.time_entry_ids = selectedTimeEntryIds;
+
+            // Convert project_id and customer_id to integer
+            if (data.project_id) {
+                data.project_id = parseInt(data.project_id);
+            } else {
+                data.project_id = null;
+            }
+            data.customer_id = parseInt(data.customer_id);
+
+            try {
+                const apiUrl = `/api/invoices/${invoiceId}`;
+                const response = await fetch(apiUrl, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data),
+                });
+
+                if (response.ok) {
+                    const updatedInvoice = await response.json();
+                    showMessage('Invoice updated successfully!', 'success');
+                    window.location.reload(); // Reload the page to reflect changes
+                } else {
+                    const errorData = await response.json();
+                    let errorMessage = 'Error updating invoice: ';
+                    if (errorData.detail) {
+                        if (Array.isArray(errorData.detail)) {
+                            errorMessage += errorData.detail.map(err => `${err.loc.join('.')} - ${err.msg}`).join('; ');
+                        } else {
+                            errorMessage += errorData.detail;
+                        }
+                    } else {
+                        errorMessage += response.statusText;
+                    }
+                    showMessage(errorMessage, 'error');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showMessage('An unexpected error occurred while updating the invoice.', 'error');
+            }
+        });
+
+        // --- New Action Button Logic ---
+        const confirmationModal = new bootstrap.Modal(document.getElementById('confirmationModal'));
+        const confirmationMessageDiv = document.getElementById('confirmationMessage');
+        const confirmActionButton = document.getElementById('confirmActionButton');
+        let currentActionCallback = null; // To store the function to execute on confirmation
+
+        // Function to show the custom confirmation modal
+        function showConfirmationModal(message, callback) {
+            confirmationMessageDiv.textContent = message;
+            currentActionCallback = callback;
+            confirmationModal.show();
+        }
+
+        // Event listener for the Confirm button in the custom modal
+        confirmActionButton.addEventListener('click', function () {
+            if (currentActionCallback) {
+                currentActionCallback();
+            }
+            confirmationModal.hide();
+        });
+
+        // Mark as Sent Button Handler (now dropdown item)
+        document.querySelectorAll('.mark-as-sent-button').forEach(button => {
+            button.addEventListener('click', function (event) {
+                event.preventDefault(); // Prevent default link behavior
+                const id = this.dataset.invoiceId;
+                showConfirmationModal(`Are you sure you want to mark Invoice #${invoiceData.record_number} as 'Sent'? This action cannot be undone.`, async () => {
+                    try {
+                        const response = await fetch(`/api/invoices/${id}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ status: 'sent' })
+                        });
+                        if (response.ok) {
+                            showMessage('Invoice marked as Sent successfully!', 'success');
+                            window.location.reload();
+                        } else {
+                            const errorData = await response.json();
+                            showMessage('Error marking invoice as Sent: ' + (errorData.detail || response.statusText), 'error');
+                        }
+                    } catch (error) {
+                        console.error('Error marking invoice as Sent:', error);
+                        showMessage('An unexpected error occurred while marking the invoice as Sent.', 'error');
+                    }
+                });
+            });
+        });
+
+        // Mark as Paid Button Handler (now dropdown item)
+        document.querySelectorAll('.mark-as-paid-button').forEach(button => {
+            button.addEventListener('click', function (event) {
+                event.preventDefault(); // Prevent default link behavior
+                const id = this.dataset.invoiceId;
+                showConfirmationModal(`Are you sure you want to mark Invoice #${invoiceData.record_number} as 'Paid'? This action cannot be undone.`, async () => {
+                    try {
+                        const response = await fetch(`/api/invoices/${id}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ status: 'paid' })
+                        });
+                        if (response.ok) {
+                            showMessage('Invoice marked as Paid successfully!', 'success');
+                            window.location.reload();
+                        } else {
+                            const errorData = await response.json();
+                            showMessage('Error marking invoice as Paid: ' + (errorData.detail || response.statusText), 'error');
+                        }
+                    } catch (error) {
+                        console.error('Error marking invoice as Paid:', error);
+                        showMessage('An unexpected error occurred while marking the invoice as Paid.', 'error');
+                    }
+                });
+            });
+        });
+
+        // Mark as Void Button Handler (now dropdown item)
+        document.querySelectorAll('.mark-as-void-button').forEach(button => {
+            button.addEventListener('click', function (event) {
+                event.preventDefault(); // Prevent default link behavior
+                const id = this.dataset.invoiceId;
+                showConfirmationModal(`Are you sure you want to mark Invoice #${invoiceData.record_number} as 'Void'? This will unlink all associated time entries. This action cannot be undone.`, async () => {
+                    try {
+                        const response = await fetch(`/api/invoices/${id}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ status: 'void' })
+                        });
+                        if (response.ok) {
+                            showMessage('Invoice marked as Void successfully and time entries unlinked!', 'success');
+                            window.location.reload();
+                        } else {
+                            const errorData = await response.json();
+                            showMessage('Error marking invoice as Void: ' + (errorData.detail || response.statusText), 'error');
+                        }
+                    } catch (error) {
+                        console.error('Error marking invoice as Void:', error);
+                        showMessage('An unexpected error occurred while marking the invoice as Void.', 'error');
+                    }
+                });
+            });
+        });
+
+        // Delete Invoice Button Handler (now dropdown item)
+        document.querySelectorAll('.delete-invoice-button').forEach(button => {
+            button.addEventListener('click', function (event) {
+                event.preventDefault(); // Prevent default link behavior
+                const id = this.dataset.invoiceId;
+                showConfirmationModal(`Are you sure you want to DELETE Invoice #${invoiceData.record_number}? This will permanently remove the invoice and free up all associated time entries. This action cannot be undone.`, async () => {
+                    try {
+                        const response = await fetch(`/api/invoices/${id}`, {
+                            method: 'DELETE',
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                        if (response.ok) {
+                            showMessage('Invoice deleted successfully and time entries freed!', 'success');
+                            // Redirect to invoices list or previous page after deletion
+                            window.location.href = '/invoices';
+                        } else {
+                            const errorData = await response.json();
+                            showMessage('Error deleting invoice: ' + (errorData.detail || response.statusText), 'error');
+                        }
+                    } catch (error) {
+                        console.error('Error deleting invoice:', error);
+                        showMessage('An unexpected error occurred while deleting the invoice.', 'error');
+                    }
+                });
+            });
+        });
+
+        // NEW: Function to render detailed time entries
+        function renderDetailedTimeEntries() {
+            const timeEntries = invoiceData.time_entries;
+            detailedTimeEntriesTableBody.innerHTML = ''; // Clear existing content
+
+            if (!timeEntries || timeEntries.length === 0) {
+                detailedTimeEntriesTableBody.innerHTML = '<tr><td colspan="8" class="text-center">No detailed time entries available for this invoice.</td></tr>'; // Updated colspan
+                return;
+            }
+
+            // Group entries by Project then by Task
+            const groupedEntries = timeEntries.reduce((acc, entry) => {
+                // Access nested project and task objects
+                const projectName = entry.project ? entry.project.name : 'No Project';
+                const taskName = entry.task ? entry.task.name : 'No Task';
+
+                if (!acc[projectName]) {
+                    acc[projectName] = {};
+                }
+                if (!acc[projectName][taskName]) {
+                    acc[projectName][taskName] = [];
+                }
+                acc[projectName][taskName].push(entry);
+                return acc;
+            }, {});
+
+            for (const projectName in groupedEntries) {
+                // Add a row for the project name
+                let projectRow = detailedTimeEntriesTableBody.insertRow();
+                projectRow.classList.add('table-primary'); // Highlight project rows
+                let projectCell = projectRow.insertCell();
+                projectCell.colSpan = 8; // Updated colspan
+                projectCell.innerHTML = `<strong>Project: ${projectName}</strong>`;
+
+                for (const taskName in groupedEntries[projectName]) {
+                    // Add a row for the task name
+                    let taskRow = detailedTimeEntriesTableBody.insertRow();
+                    taskRow.classList.add('table-info'); // Highlight task rows
+                    let taskCell = taskRow.insertCell();
+                    taskCell.colSpan = 8; // Updated colspan
+                    taskCell.innerHTML = `&nbsp;&nbsp;&nbsp;<strong>Task: ${taskName}</strong>`;
+
+                    // Sort entries within each task by date
+                    const sortedTaskEntries = groupedEntries[projectName][taskName].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+                    sortedTaskEntries.forEach(entry => {
+                        let entryRow = detailedTimeEntriesTableBody.insertRow();
+                        entryRow.innerHTML = `
+                            <td>${entry.date}</td>
+                            <td>${entry.user ? entry.user.name : 'N/A'}</td> {# Access nested user name #}
+                            <td>${entry.project ? entry.project.name : 'N/A'}</td> {# Access nested project name #}
+                            <td>${entry.task ? entry.task.name : 'N/A'}</td> {# Access nested task name #}
+                            <td class="text-end">${formatCurrency(entry.hours)}</td>
+                            <td class="text-end">${formatCurrency(entry.entry_rate)}</td> {# NEW: Rate #}
+                            <td class="text-end">${formatCurrency(entry.entry_dollars)}</td> {# NEW: Total Dollars #}
+                            <td>${entry.notes || ''}</td>
+                        `;
+                    });
+                }
+            }
+        }
+
+        // Call the new function to render detailed time entries on page load
+        renderDetailedTimeEntries();
+
+    });
+</script>
+
+{% endblock content %}

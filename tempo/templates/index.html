@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="p-5 mb-4 bg-light rounded-3">
+    <div class="container-fluid py-5">
+        <h1 class="display-5 fw-bold">Welcome to Tempo!</h1>
+        <p class="col-md-8 fs-4">Your simple time-keeping and invoicing application. Manage your customers, projects,
+            and time entries with ease.</p>
+        <a class="btn btn-primary btn-lg" href="{{ url_for('read_time_entries_page') }}" role="button">Start Logging
+            Time</a>
+        <a class="btn btn-outline-secondary btn-lg ms-2" href="{{ url_for('read_users_page') }}" role="button">Manage
+            Users</a>
+    </div>
+</div>
+
+<div class="row row-cols-1 row-cols-md-2 g-4">
+    <div class="col">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Users Management</h5>
+                <p class="card-text">Add, view, and manage all the users in your system who will be logging time.</p>
+                <a href="{{ url_for('read_users_page') }}" class="btn btn-sm btn-primary">Go to Users</a>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Time Entries</h5>
+                <p class="card-text">Log hours against projects and tasks, and keep track of all your team's efforts.
+                </p>
+                <a href="{{ url_for('read_time_entries_page') }}" class="btn btn-sm btn-primary">Go to Time Entries</a>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Customers Management</h5>
+                <p class="card-text">Keep a detailed record of all your clients and their contact information.</p>
+                <a href="{{ url_for('read_customers_page') }}" class="btn btn-sm btn-primary">Go to Customers</a>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Projects Management</h5>
+                <p class="card-text">Organize your work into projects, assign tasks, and track progress.</p>
+                <a href="{{ url_for('read_projects_page') }}" class="btn btn-sm btn-primary">Go to Projects</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

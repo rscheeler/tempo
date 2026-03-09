@@ -1,0 +1,467 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2 class="mb-4">Create Invoices</h2>
+
+<div class="card mb-4 shadow-sm">
+    <div class="card-header bg-primary text-white">
+        <h4 class="mb-0">Select Customer & Unbilled Entries</h4>
+    </div>
+    <div class="card-body">
+        <div class="mb-3">
+            <label for="customerSelect" class="form-label">Select Customer:</label>
+            <select class="form-select" id="customerSelect" required>
+                <option value="">-- Select a Customer --</option>
+            </select>
+        </div>
+
+        <div id="unbilledEntriesContainer" style="display: none;">
+            <h5 class="mt-4 mb-3">Unbilled Time Entries for <span id="selectedCustomerName"></span>:</h5>
+            <div class="alert alert-info text-center" role="alert" id="loadingEntriesMessage">
+                Loading unbilled entries...
+            </div>
+            <div class="alert alert-warning text-center" role="alert" id="noUnbilledEntriesMessage"
+                style="display: none;">
+                No unbilled time entries found for this customer.
+            </div>
+
+            <form id="createInvoiceForm">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover table-sm" id="unbilledEntriesTable">
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" id="selectAllEntries"></th>
+                                <th>Date</th>
+                                <th>User</th>
+                                <th>Project</th>
+                                <th>Task</th>
+                                <th>Hours</th>
+                                <th>Rate Type</th>
+                                <th>Rate</th>
+                                <th>Dollars</th>
+                                <th>Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <th colspan="7" class="text-end">Selected Total:</th>
+                                <th><span id="selectedTotalHours">0.00</span> hrs</th>
+                                <th><span id="selectedTotalDollars">$0.00</span></th>
+                                <th></th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+
+                <h5 class="mt-4 mb-3">Invoice Details:</h5>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label for="recordNumber" class="form-label">Invoice Number</label>
+                        <input type="text" class="form-control" id="recordNumber" name="record_number" readonly>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="invoiceDate" class="form-label">Invoice Date</label>
+                        <input type="date" class="form-control" id="invoiceDate" name="invoice_date" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="dueDate" class="form-label">Due Date</label>
+                        <input type="date" class="form-control" id="dueDate" name="due_date" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="poNumber" class="form-label">PO Number (Optional)</label>
+                        <input type="text" class="form-control" id="poNumber" name="po_number">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="invoiceNotes" class="form-label">Notes (Optional)</label>
+                        <textarea class="form-control" id="invoiceNotes" name="notes" rows="2"></textarea>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-success mt-4" id="createInvoiceBtn" disabled>
+                    <i class="fas fa-file-invoice-dollar me-2"></i>Create Invoice
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<h3 class="mt-5 mb-3">Existing Invoices</h3>
+<div class="table-responsive">
+    <table class="table table-striped table-hover" id="existingInvoicesTable">
+        <thead>
+            <tr>
+                <th>Invoice #</th>
+                <th>Customer</th>
+                <th>Project</th>
+                <th>Invoice Date</th>
+                <th>Due Date</th>
+                <th>Total Amount</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+        </tbody>
+    </table>
+</div>
+
+<div class="alert alert-info text-center" role="alert" id="loadingInvoicesMessage">
+    Loading existing invoices...
+</div>
+<div class="alert alert-warning text-center" role="alert" id="noExistingInvoicesMessage" style="display: none;">
+    No invoices found.
+</div>
+
+<script>
+    // Helper function to format currency
+    function formatCurrency(value) {
+        if (value === null || value === undefined) {
+            return '0.00';
+        }
+        return parseFloat(value).toFixed(2);
+    }
+
+    // Helper function to calculate entry dollars for display
+    function calculateEntryDollars(entry) {
+        if (entry.hours === null || entry.hours === undefined) {
+            return 0.0;
+        }
+
+        let rate = 0.0;
+        if (entry.project && entry.project.rate_type === 'project' && entry.project.project_rate !== null && entry.project.project_rate !== undefined) {
+            rate = entry.project.project_rate;
+        } else if (entry.task && entry.project && entry.project.rate_type === 'task' && entry.task.task_rate !== null && entry.task.task_rate !== undefined) {
+            rate = entry.task.task_rate;
+        }
+        return entry.hours * rate;
+    }
+
+    // Helper function to show messages (from base.html)
+    function showMessage(message, type = 'info') {
+        const messageDiv = document.getElementById('appMessage');
+        if (messageDiv) {
+            messageDiv.textContent = message;
+            messageDiv.className = `app-message show ${type}`;
+            setTimeout(() => {
+                messageDiv.classList.remove('show');
+            }, 3000);
+        } else {
+            console.warn('App message container not found. Message:', message);
+        }
+    }
+
+    const customerSelect = document.getElementById('customerSelect');
+    const unbilledEntriesContainer = document.getElementById('unbilledEntriesContainer');
+    const selectedCustomerNameSpan = document.getElementById('selectedCustomerName');
+    const loadingEntriesMessage = document.getElementById('loadingEntriesMessage');
+    const noUnbilledEntriesMessage = document.getElementById('noUnbilledEntriesMessage');
+    const unbilledEntriesTableBody = document.getElementById('unbilledEntriesTable').querySelector('tbody');
+    const selectAllEntriesCheckbox = document.getElementById('selectAllEntries');
+    const selectedTotalHoursSpan = document.getElementById('selectedTotalHours');
+    const selectedTotalDollarsSpan = document.getElementById('selectedTotalDollars');
+    const createInvoiceBtn = document.getElementById('createInvoiceBtn');
+    const createInvoiceForm = document.getElementById('createInvoiceForm');
+    const invoiceDateInput = document.getElementById('invoiceDate');
+    const dueDateInput = document.getElementById('dueDate');
+    const existingInvoicesTableBody = document.getElementById('existingInvoicesTable').querySelector('tbody');
+    const loadingInvoicesMessage = document.getElementById('loadingInvoicesMessage');
+    const noExistingInvoicesMessage = document.getElementById('noExistingInvoicesMessage');
+    const recordNumberInput = document.getElementById('recordNumber');
+
+    let allUnbilledEntries = [];
+    // allExistingInvoices no longer needed as we navigate to a new page for details
+
+    const today = new Date();
+    invoiceDateInput.value = today.toISOString().split('T')[0];
+    const thirtyDaysLater = new Date(today);
+    thirtyDaysLater.setDate(today.getDate() + 30);
+    dueDateInput.value = thirtyDaysLater.toISOString().split('T')[0];
+
+    // Function to populate customer dropdown
+    async function populateCustomers() {
+        try {
+            const response = await fetch("{{ url_for('get_all_customers') }}?show_archived=false");
+            if (response.ok) {
+                const customers = await response.json();
+                customerSelect.innerHTML = '<option value="">-- Select a Customer --</option>';
+                customers.forEach(customer => {
+                    const option = document.createElement('option');
+                    option.value = customer.id;
+                    option.textContent = customer.name;
+                    customerSelect.appendChild(option);
+                });
+                if (customers.length === 0) {
+                    showMessage('No active customers found. Please add a customer first.', 'warning');
+                }
+            } else {
+                const errorData = await response.json();
+                showMessage('Error loading customers: ' + (errorData.detail || response.statusText), 'error');
+            }
+        } catch (error) {
+            console.error('An unexpected error occurred while fetching customers:', error);
+            showMessage('An unexpected error occurred while loading customers.', 'error');
+        }
+    }
+
+    // Function to fetch and display unbilled time entries for a selected customer
+    async function fetchAndRenderUnbilledEntries(customerId, customerName) {
+        unbilledEntriesContainer.style.display = 'block';
+        loadingEntriesMessage.style.display = 'block';
+        noUnbilledEntriesMessage.style.display = 'none';
+        unbilledEntriesTableBody.innerHTML = '';
+        selectedTotalHoursSpan.textContent = '0.00';
+        selectedTotalDollarsSpan.textContent = '$0.00';
+        selectAllEntriesCheckbox.checked = false;
+        createInvoiceBtn.disabled = true;
+
+        if (!customerId) {
+            unbilledEntriesContainer.style.display = 'none';
+            loadingEntriesMessage.style.display = 'none';
+            return;
+        }
+
+        selectedCustomerNameSpan.textContent = customerName;
+
+        try {
+            const response = await fetch(`/api/invoices/unbilled_entries?customer_id=${customerId}`);
+            if (response.ok) {
+                allUnbilledEntries = await response.json();
+                renderUnbilledEntriesTable(allUnbilledEntries);
+            } else {
+                const errorData = await response.json();
+                showMessage('Error fetching unbilled entries: ' + (errorData.detail || response.statusText), 'error');
+                noUnbilledEntriesMessage.style.display = 'block';
+            }
+        } catch (error) {
+            console.error('Error fetching unbilled entries:', error);
+            showMessage('An unexpected error occurred while fetching unbilled entries.', 'error');
+            noUnbilledEntriesMessage.style.display = 'block';
+        } finally {
+            loadingEntriesMessage.style.display = 'none';
+        }
+    }
+
+    // Function to render the unbilled entries table
+    function renderUnbilledEntriesTable(entries) {
+        unbilledEntriesTableBody.innerHTML = '';
+        if (entries.length === 0) {
+            noUnbilledEntriesMessage.style.display = 'block';
+            return;
+        }
+        noUnbilledEntriesMessage.style.display = 'none';
+
+        entries.forEach(entry => {
+            const row = document.createElement('tr');
+            row.dataset.entryId = entry.id;
+            row.innerHTML = `
+                <td><input type="checkbox" class="entry-checkbox"></td>
+                <td>${entry.date}</td>
+                <td>${entry.user_name}</td>
+                <td>${entry.project_name}</td>
+                <td>${entry.task_name}</td>
+                <td>${formatCurrency(entry.hours)}</td>
+                <td>${entry.entry_rate_type ? entry.entry_rate_type.replace(/_/g, ' ') : 'N/A'}</td>
+                <td>${entry.entry_rate !== null ? `$${formatCurrency(entry.entry_rate)}` : 'N/A'}</td>
+                <td>$${formatCurrency(entry.entry_dollars)}</td>
+                <td>${entry.notes || '-'}</td>
+            `;
+            unbilledEntriesTableBody.appendChild(row);
+        });
+
+        document.querySelectorAll('.entry-checkbox').forEach(checkbox => {
+            checkbox.addEventListener('change', updateSelectedTotals);
+        });
+        selectAllEntriesCheckbox.addEventListener('change', toggleSelectAll);
+    }
+
+    // Update totals when checkboxes change
+    function updateSelectedTotals() {
+        let totalHours = 0.0;
+        let totalDollars = 0.0;
+        let anyChecked = false;
+
+        document.querySelectorAll('.entry-checkbox:checked').forEach(checkbox => {
+            anyChecked = true;
+            const row = checkbox.closest('tr');
+            const entryId = parseInt(row.dataset.entryId);
+            const entry = allUnbilledEntries.find(e => e.id === entryId);
+            if (entry) {
+                totalHours += entry.hours || 0;
+                totalDollars += entry.entry_dollars || 0;
+            }
+        });
+
+        selectedTotalHoursSpan.textContent = formatCurrency(totalHours);
+        selectedTotalDollarsSpan.textContent = `$${formatCurrency(totalDollars)}`;
+        createInvoiceBtn.disabled = !anyChecked;
+    }
+
+    // Toggle all checkboxes
+    function toggleSelectAll() {
+        const isChecked = selectAllEntriesCheckbox.checked;
+        document.querySelectorAll('.entry-checkbox').forEach(checkbox => {
+            checkbox.checked = isChecked;
+        });
+        updateSelectedTotals();
+    }
+
+    // Handle customer selection change
+    customerSelect.addEventListener('change', function () {
+        const selectedCustomerId = this.value;
+        const selectedCustomerText = this.options[this.selectedIndex].textContent;
+        fetchAndRenderUnbilledEntries(selectedCustomerId, selectedCustomerText);
+    });
+
+    // Handle Create Invoice Form submission
+    createInvoiceForm.addEventListener('submit', async function (event) {
+        event.preventDefault();
+
+        const selectedEntryIds = Array.from(document.querySelectorAll('.entry-checkbox:checked')).map(checkbox => {
+            return parseInt(checkbox.closest('tr').dataset.entryId);
+        });
+
+        if (selectedEntryIds.length === 0) {
+            showMessage('Please select at least one time entry to invoice.', 'warning');
+            return;
+        }
+
+        const formData = new FormData(event.target);
+        const invoiceData = Object.fromEntries(formData.entries());
+        invoiceData.customer_id = parseInt(customerSelect.value);
+        invoiceData.time_entry_ids = selectedEntryIds;
+
+        invoiceData.invoice_date = invoiceDateInput.value;
+        invoiceData.due_date = dueDateInput.value;
+
+        if (!invoiceData.record_number) {
+            delete invoiceData.record_number;
+        }
+
+        const projectsInSelectedEntries = new Set();
+        selectedEntryIds.forEach(id => {
+            const entry = allUnbilledEntries.find(e => e.id === id);
+            if (entry && entry.project_id) {
+                projectsInSelectedEntries.add(entry.project_id);
+            }
+        });
+        if (projectsInSelectedEntries.size === 1) {
+            invoiceData.project_id = Array.from(projectsInSelectedEntries)[0];
+        } else {
+            invoiceData.project_id = null;
+        }
+
+        try {
+            const response = await fetch("{{ url_for('create_invoice') }}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(invoiceData),
+            });
+
+            if (response.ok) {
+                showMessage('Invoice created successfully!', 'success');
+                fetchAndRenderUnbilledEntries(customerSelect.value, customerSelect.options[customerSelect.selectedIndex].textContent);
+                fetchAndRenderExistingInvoices();
+                createInvoiceForm.reset();
+                invoiceDateInput.value = today.toISOString().split('T')[0];
+                dueDateInput.value = thirtyDaysLater.toISOString().split('T')[0];
+                recordNumberInput.value = '';
+            } else {
+                const errorData = await response.json();
+                let errorMessage = 'Error creating invoice: ';
+                if (errorData.detail) {
+                    if (Array.isArray(errorData.detail)) {
+                        errorMessage += errorData.detail.map(err => `${err.loc.join('.')} - ${err.msg}`).join('; ');
+                    } else {
+                        errorMessage += errorData.detail;
+                    }
+                } else {
+                    errorMessage += response.statusText;
+                }
+                showMessage(errorMessage, 'error');
+            }
+        } catch (error) {
+            console.error('Fetch error during invoice creation:', error);
+            showMessage('An unexpected error occurred while creating the invoice.', 'error');
+        }
+    });
+
+    // Function to fetch and render existing invoices in a table
+    async function fetchAndRenderExistingInvoices() {
+        loadingInvoicesMessage.style.display = 'block';
+        noExistingInvoicesMessage.style.display = 'none';
+        existingInvoicesTableBody.innerHTML = '';
+
+        try {
+            const response = await fetch("{{ url_for('get_all_invoices') }}");
+            if (response.ok) {
+                const invoices = await response.json();
+                if (invoices.length === 0) {
+                    noExistingInvoicesMessage.style.display = 'block';
+                    return;
+                }
+                noExistingInvoicesMessage.style.display = 'none';
+
+                invoices.forEach(invoice => {
+                    // Determine badge class based on status
+                    let statusBadgeClass;
+                    switch (invoice.status) {
+                        case 'draft':
+                            statusBadgeClass = 'bg-info';
+                            break;
+                        case 'sent':
+                            statusBadgeClass = 'bg-primary';
+                            break;
+                        case 'paid':
+                            statusBadgeClass = 'bg-success';
+                            break;
+                        case 'void':
+                            statusBadgeClass = 'bg-danger';
+                            break;
+                        default:
+                            statusBadgeClass = 'bg-secondary'; // Fallback
+                    }
+
+                    const row = document.createElement('tr');
+                    row.dataset.invoiceId = invoice.id;
+                    row.style.cursor = 'pointer'; // Indicate clickable row
+                    row.innerHTML = `
+                        <td>${invoice.record_number}</td>
+                        <td>${invoice.customer ? invoice.customer.name : 'N/A'}</td>
+                        <td>${invoice.project ? invoice.project.name : 'N/A'}</td>
+                        <td>${invoice.invoice_date}</td>
+                        <td>${invoice.due_date}</td>
+                        <td>$${formatCurrency(invoice.total_amount)}</td>
+                        <td><span class="badge ${statusBadgeClass}">${invoice.status}</span></td>
+                    `;
+                    existingInvoicesTableBody.appendChild(row);
+
+                    // Add click listener to navigate to the detail page
+                    row.addEventListener('click', () => {
+                        window.location.href = `{{ url_for('read_invoice_detail_page', invoice_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', invoice.id);
+                    });
+                });
+            } else {
+                const errorData = await response.json();
+                showMessage('Error fetching existing invoices: ' + (errorData.detail || response.statusText), 'error');
+                noExistingInvoicesMessage.style.display = 'block';
+            }
+        } catch (error) {
+            console.error('Error fetching existing invoices:', error);
+            showMessage('An unexpected error occurred while fetching existing invoices.', 'error');
+            noExistingInvoicesMessage.style.display = 'block';
+        } finally {
+            loadingInvoicesMessage.style.display = 'none';
+        }
+    }
+
+    // Initial loads
+    document.addEventListener('DOMContentLoaded', () => {
+        populateCustomers();
+        fetchAndRenderExistingInvoices();
+    });
+</script>
+
+{% endblock content %}
