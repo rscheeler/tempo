@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select
 from sqlalchemy.orm import selectinload
 
-from db.models import (
+from ..db.models import (
     TimeEntry,
     TimeEntryCreate,
     TimeEntryUpdate,
@@ -23,7 +23,7 @@ from db.models import (
     GroupedTask,
     GroupedTimeEntry,  # Grouped response models
 )
-from db.database import get_session  # Import get_session from db.database.py
+from ..db.database import get_session  # Import get_session from db.database.py
 
 time_entries_router = APIRouter(
     prefix="/api/time_entries",
@@ -34,7 +34,9 @@ time_entries_router = APIRouter(
 
 # IMPORTANT: Define the more specific "/grouped" route BEFORE the general "/{time_entry_id}" route
 @time_entries_router.get(
-    "/grouped", response_model=GroupedTimeEntriesResponse, summary="Get Grouped Time Entries for a Week"
+    "/grouped",
+    response_model=GroupedTimeEntriesResponse,
+    summary="Get Grouped Time Entries for a Week",
 )
 async def get_grouped_time_entries(
     session: Session = Depends(get_session),
@@ -46,7 +48,9 @@ async def get_grouped_time_entries(
     grouped by customer, then project, then task, with calculated hours and dollar totals.
     Includes invoice status for each time entry.
     """
-    print(f"API received request for grouped time entries: start_date={start_date}, end_date={end_date}")  # Debug print
+    print(
+        f"API received request for grouped time entries: start_date={start_date}, end_date={end_date}"
+    )  # Debug print
 
     start_of_week = start_date
     end_of_week = end_date
@@ -65,9 +69,7 @@ async def get_grouped_time_entries(
     )
     time_entries = time_entries_query.all()
 
-    grouped_data = (
-        {}
-    )  # {customer_id: {customer_name, total_hours, total_dollars, projects: {project_id: {project_name, ...}}}}
+    grouped_data = {}  # {customer_id: {customer_name, total_hours, total_dollars, projects: {project_id: {project_name, ...}}}}
     grand_total_hours = 0.0
     grand_total_dollars = 0.0
 
@@ -83,11 +85,19 @@ async def get_grouped_time_entries(
         entry_rate_type = None
 
         if entry.hours is not None:
-            if entry.project and entry.project.rate_type == RateType.PROJECT and entry.project.project_rate is not None:
+            if (
+                entry.project
+                and entry.project.rate_type == RateType.PROJECT
+                and entry.project.project_rate is not None
+            ):
                 entry_dollars = entry.hours * entry.project.project_rate
                 entry_rate = entry.project.project_rate
                 entry_rate_type = project.rate_type.value  # Use .value for enum
-            elif entry.task and entry.project.rate_type == RateType.TASK and entry.task.task_rate is not None:
+            elif (
+                entry.task
+                and entry.project.rate_type == RateType.TASK
+                and entry.task.task_rate is not None
+            ):
                 entry_dollars = entry.hours * entry.task.task_rate
                 entry_rate = entry.task.task_rate
                 entry_rate_type = project.rate_type.value  # Use .value for enum
@@ -105,7 +115,9 @@ async def get_grouped_time_entries(
         grouped_data[customer.id]["total_dollars"] += entry_dollars
 
         # Initialize project group
-        if project.id not in grouped_data[customer.id]["projects"]:  # Use project.id for unique keys
+        if (
+            project.id not in grouped_data[customer.id]["projects"]
+        ):  # Use project.id for unique keys
             grouped_data[customer.id]["projects"][project.id] = {
                 "name": project.name,
                 "total_hours": 0.0,
@@ -117,7 +129,9 @@ async def get_grouped_time_entries(
         grouped_data[customer.id]["projects"][project.id]["total_dollars"] += entry_dollars
 
         # Initialize task group
-        if task.id not in grouped_data[customer.id]["projects"][project.id]["tasks"]:  # Use task.id for unique keys
+        if (
+            task.id not in grouped_data[customer.id]["projects"][project.id]["tasks"]
+        ):  # Use task.id for unique keys
             grouped_data[customer.id]["projects"][project.id]["tasks"][task.id] = {
                 "name": task.name,
                 "total_hours": 0.0,
@@ -125,8 +139,12 @@ async def get_grouped_time_entries(
                 "entries": [],
             }
 
-        grouped_data[customer.id]["projects"][project.id]["tasks"][task.id]["total_hours"] += entry.hours or 0.0
-        grouped_data[customer.id]["projects"][project.id]["tasks"][task.id]["total_dollars"] += entry_dollars
+        grouped_data[customer.id]["projects"][project.id]["tasks"][task.id]["total_hours"] += (
+            entry.hours or 0.0
+        )
+        grouped_data[customer.id]["projects"][project.id]["tasks"][task.id]["total_dollars"] += (
+            entry_dollars
+        )
 
         # Add entry details and update totals
         # Create a dictionary that matches GroupedTimeEntry model
@@ -147,7 +165,9 @@ async def get_grouped_time_entries(
             ],  # Include invoice info
         }
 
-        grouped_data[customer.id]["projects"][project.id]["tasks"][task.id]["entries"].append(grouped_entry)
+        grouped_data[customer.id]["projects"][project.id]["tasks"][task.id]["entries"].append(
+            grouped_entry
+        )
 
         grand_total_hours += entry.hours or 0.0
         grand_total_dollars += entry_dollars
@@ -173,7 +193,10 @@ async def get_grouped_time_entries(
 
 
 @time_entries_router.post(
-    "/", response_model=TimeEntry, status_code=status.HTTP_201_CREATED, summary="Create a new Time Entry"
+    "/",
+    response_model=TimeEntry,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new Time Entry",
 )
 async def create_time_entry(time_entry: TimeEntryCreate, session: Session = Depends(get_session)):
     """Creates a new time entry in the database."""
@@ -184,7 +207,9 @@ async def create_time_entry(time_entry: TimeEntryCreate, session: Session = Depe
     return db_time_entry
 
 
-@time_entries_router.get("/", response_model=List[TimeEntryReadWithRelations], summary="Get all Time Entries")
+@time_entries_router.get(
+    "/", response_model=List[TimeEntryReadWithRelations], summary="Get all Time Entries"
+)
 async def get_all_time_entries(session: Session = Depends(get_session)):
     """
     Retrieves a list of all time entries with related Project, User, Task, and Invoice data.
@@ -199,7 +224,9 @@ async def get_all_time_entries(session: Session = Depends(get_session)):
     return time_entries
 
 
-@time_entries_router.get("/{time_entry_id}", response_model=TimeEntryReadWithRelations, summary="Get Time Entry by ID")
+@time_entries_router.get(
+    "/{time_entry_id}", response_model=TimeEntryReadWithRelations, summary="Get Time Entry by ID"
+)
 async def get_time_entry_by_id(time_entry_id: int, session: Session = Depends(get_session)):
     """
     Retrieves a single time entry by its ID with related Project, User, Task, and Invoice data.
@@ -217,7 +244,9 @@ async def get_time_entry_by_id(time_entry_id: int, session: Session = Depends(ge
     return time_entry
 
 
-@time_entries_router.put("/{time_entry_id}", response_model=TimeEntry, summary="Update a Time Entry")
+@time_entries_router.put(
+    "/{time_entry_id}", response_model=TimeEntry, summary="Update a Time Entry"
+)
 async def update_time_entry(
     time_entry_id: int, time_entry_update: TimeEntryUpdate, session: Session = Depends(get_session)
 ):
@@ -250,7 +279,9 @@ async def update_time_entry(
     return time_entry
 
 
-@time_entries_router.delete("/{time_entry_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a Time Entry")
+@time_entries_router.delete(
+    "/{time_entry_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a Time Entry"
+)
 async def delete_time_entry(time_entry_id: int, session: Session = Depends(get_session)):
     """
     Deletes a time entry from the database.

@@ -1,8 +1,14 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select
-from db.models import Customer, CustomerUpdate, Project, Invoice, TimeEntry  # Adjusted import if models.py is at root
-from db.database import get_session
+from ..db.models import (
+    Customer,
+    CustomerUpdate,
+    Project,
+    Invoice,
+    TimeEntry,
+)  # Adjusted import if models.py is at root
+from ..db.database import get_session
 
 customers_router = APIRouter(
     prefix="/api/customers",
@@ -12,7 +18,10 @@ customers_router = APIRouter(
 
 
 @customers_router.post(
-    "/", response_model=Customer, status_code=status.HTTP_201_CREATED, summary="Create a new Customer"
+    "/",
+    response_model=Customer,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new Customer",
 )
 async def create_customer(customer: Customer, session: Session = Depends(get_session)):
     """Creates a new customer in the database."""
@@ -20,7 +29,8 @@ async def create_customer(customer: Customer, session: Session = Depends(get_ses
     existing_customer = session.exec(select(Customer).where(Customer.name == customer.name)).first()
     if existing_customer:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=f"Customer with name '{customer.name}' already exists."
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Customer with name '{customer.name}' already exists.",
         )
     session.add(customer)
     session.commit()
@@ -51,7 +61,9 @@ async def get_customer_by_id(customer_id: int, session: Session = Depends(get_se
 
 
 @customers_router.put("/{customer_id}", response_model=Customer, summary="Update a Customer")
-async def update_customer(customer_id: int, customer_update: CustomerUpdate, session: Session = Depends(get_session)):
+async def update_customer(
+    customer_id: int, customer_update: CustomerUpdate, session: Session = Depends(get_session)
+):
     """Updates an existing customer's information."""
     customer = session.get(Customer, customer_id)
     if not customer:
@@ -59,7 +71,9 @@ async def update_customer(customer_id: int, customer_update: CustomerUpdate, ses
 
     # If name is being updated, check for uniqueness
     if customer_update.name is not None and customer_update.name != customer.name:
-        existing_customer = session.exec(select(Customer).where(Customer.name == customer_update.name)).first()
+        existing_customer = session.exec(
+            select(Customer).where(Customer.name == customer_update.name)
+        ).first()
         if existing_customer and existing_customer.id != customer_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -76,7 +90,9 @@ async def update_customer(customer_id: int, customer_update: CustomerUpdate, ses
     return customer
 
 
-@customers_router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a Customer")
+@customers_router.delete(
+    "/{customer_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a Customer"
+)
 async def delete_customer(customer_id: int, session: Session = Depends(get_session)):
     """Deletes a customer from the database, preventing deletion if dependent records exist."""
     customer = session.get(Customer, customer_id)
@@ -84,7 +100,9 @@ async def delete_customer(customer_id: int, session: Session = Depends(get_sessi
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
 
     # Check for associated projects
-    associated_project = session.exec(select(Project).where(Project.customer_id == customer_id)).first()
+    associated_project = session.exec(
+        select(Project).where(Project.customer_id == customer_id)
+    ).first()
     if associated_project:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,  # Changed to 409 Conflict as it's a conflict with existing data
@@ -92,7 +110,9 @@ async def delete_customer(customer_id: int, session: Session = Depends(get_sessi
         )
 
     # Check for associated invoices
-    associated_invoice = session.exec(select(Invoice).where(Invoice.customer_id == customer_id)).first()
+    associated_invoice = session.exec(
+        select(Invoice).where(Invoice.customer_id == customer_id)
+    ).first()
     if associated_invoice:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,  # Changed to 409 Conflict

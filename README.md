@@ -6,7 +6,7 @@ Clone the repository and install the dependencies:
 ```
 git clone https://github.com/rscheeler/tempo.git
 cd tempo
-pip install -r requirements.txt
+uv sync
 ```
 
 ## Setup
@@ -33,7 +33,10 @@ Update the LOGO and FAVICON in your .env file to match your filenames.
 
 ## Running the Server
 ```
-cd tempo
-uvicorn main:app --reload
+uvicorn tempo.main:app --reload
+```
+or
+```
+task run
 ```
 Navigate to the uvicorn port in your browser to get started.

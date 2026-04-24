@@ -3,6 +3,7 @@ import json  # Import json module
 from contextlib import asynccontextmanager
 from datetime import datetime, date, timedelta
 from typing import List, Optional
+from pathlib import Path
 
 from fastapi import FastAPI, Request, Depends, Query, HTTPException, status
 from fastapi.responses import HTMLResponse
@@ -11,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session, select
 from sqlalchemy.orm import selectinload
 
-from db.models import (
+from .db.models import (
     User,
     TimeEntry,
     Project,
@@ -28,15 +29,17 @@ from db.models import (
     UserReadForTimeEntry,
     ProjectReadWithCustomer,
 )
-from db.config import settings
-from db.database import create_db_and_tables, get_session
+from .db.config import settings
+from .db.database import create_db_and_tables, get_session
 
-from routers.users import users_router
-from routers.time_entries import time_entries_router
-from routers.customers import customers_router
-from routers.projects import projects_router, get_all_projects
-from routers.tasks import tasks_router
-from routers.invoices import invoices_router
+from .routers.users import users_router
+from .routers.time_entries import time_entries_router
+from .routers.customers import customers_router
+from .routers.projects import projects_router, get_all_projects
+from .routers.tasks import tasks_router
+from .routers.invoices import invoices_router
+
+BASE_DIR = Path(__file__).resolve().parent
 
 
 @asynccontextmanager
@@ -57,10 +60,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 # Mount static files (CSS, JS, images)
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
+app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # --- Jinja2 Templates Configuration ---
-templates = Jinja2Templates(directory="templates")
+templates = Jinja2Templates(directory=BASE_DIR / "templates")
 # Load global variables into Jinja2 environment from settings
 templates.env.globals["companyname"] = settings.COMPANY_NAME
 templates.env.globals["companyaddress"] = settings.COMPANY_ADDRESS
@@ -68,6 +70,7 @@ templates.env.globals["companyphone"] = settings.COMPANY_PHONE
 templates.env.globals["billingemail"] = settings.BILLING_EMAIL
 templates.env.globals["logo"] = settings.LOGO
 templates.env.globals["favicon"] = settings.FAVICON
+
 
 # Jinja2 custom filter for datetime formatting
 def format_datetime(value, format="%Y-%m-%d"):
@@ -123,7 +126,9 @@ def json_serial(obj):
 @app.get("/", response_class=HTMLResponse, summary="Home Page")
 async def read_root(request: Request):
     """Renders the main index page."""
-    return templates.TemplateResponse("index.html", {"request": request, "title": "Home", "url_for": request.url_for})
+    return templates.TemplateResponse(
+        "index.html", {"request": request, "title": "Home", "url_for": request.url_for}
+    )
 
 
 @app.get("/users", response_class=HTMLResponse, summary="Users Management Page")
@@ -131,7 +136,8 @@ async def read_users_page(request: Request, session: Session = Depends(get_sessi
     """Renders the users management page and fetches all users."""
     users = session.exec(select(User)).all()
     return templates.TemplateResponse(
-        "users.html", {"request": request, "users": users, "title": "Manage Users", "url_for": request.url_for}
+        "users.html",
+        {"request": request, "users": users, "title": "Manage Users", "url_for": request.url_for},
     )
 
 
@@ -192,7 +198,12 @@ async def read_customers_page(
     customers = session.exec(query).all()
     return templates.TemplateResponse(
         "customers.html",
-        {"request": request, "customers": customers, "title": "Manage Customers", "url_for": request.url_for},
+        {
+            "request": request,
+            "customers": customers,
+            "title": "Manage Customers",
+            "url_for": request.url_for,
+        },
     )
 
 
@@ -208,11 +219,18 @@ async def read_projects_page(
     """Renders the projects management page and fetches all projects with charged amounts."""
     # Call the API endpoint from projects_router to get projects with calculated charged amounts
     # Pass the customer_id directly to get_all_projects
-    projects = await get_all_projects(session=session, customer_id=customer_id, show_archived=show_archived)
+    projects = await get_all_projects(
+        session=session, customer_id=customer_id, show_archived=show_archived
+    )
 
     return templates.TemplateResponse(
         "projects.html",
-        {"request": request, "projects": projects, "title": "Manage Projects", "url_for": request.url_for},
+        {
+            "request": request,
+            "projects": projects,
+            "title": "Manage Projects",
+            "url_for": request.url_for,
+        },
     )
 
 
@@ -220,13 +238,16 @@ async def read_projects_page(
 async def read_invoices_page(request: Request):
     """Renders the invoicing management page."""
     return templates.TemplateResponse(
-        "invoices.html", {"request": request, "title": "Manage Invoices", "url_for": request.url_for}
+        "invoices.html",
+        {"request": request, "title": "Manage Invoices", "url_for": request.url_for},
     )
 
 
 # HTML endpoint for Invoice detail page
 @app.get("/invoices/view/{invoice_id}", response_class=HTMLResponse, summary="Invoice Detail Page")
-async def read_invoice_detail_page(request: Request, invoice_id: int, session: Session = Depends(get_session)):
+async def read_invoice_detail_page(
+    request: Request, invoice_id: int, session: Session = Depends(get_session)
+):
     """Renders a detailed view of a single invoice."""
     invoice = session.exec(
         select(Invoice)
@@ -256,7 +277,11 @@ async def read_invoice_detail_page(request: Request, invoice_id: int, session: S
         # Calculate rate and amount for the individual entry
         entry_rate = 0.0
         if entry.hours is not None:
-            if entry.project and entry.project.rate_type == RateType.PROJECT and entry.project.project_rate is not None:
+            if (
+                entry.project
+                and entry.project.rate_type == RateType.PROJECT
+                and entry.project.project_rate is not None
+            ):
                 entry_rate = entry.project.project_rate
             elif (
                 entry.task
@@ -324,7 +349,9 @@ async def read_invoice_detail_page(request: Request, invoice_id: int, session: S
     # Fetch and convert customers for the dropdown
     customers_db = session.exec(select(Customer).where(Customer.is_archived == False)).all()
     # Convert list of Pydantic models to list of dictionaries, then to JSON string
-    customers_for_template_dicts = [CustomerReadForInvoice.model_validate(c).model_dump() for c in customers_db]
+    customers_for_template_dicts = [
+        CustomerReadForInvoice.model_validate(c).model_dump() for c in customers_db
+    ]
     customers_json_string = json.dumps(customers_for_template_dicts)
 
     # Fetch and convert projects for the dropdown, ensuring customer and tasks are loaded
@@ -334,13 +361,17 @@ async def read_invoice_detail_page(request: Request, invoice_id: int, session: S
         .options(selectinload(Project.customer), selectinload(Project.tasks))
     ).all()
     # Convert list of Pydantic models to list of dictionaries, then to JSON string
-    projects_for_template_dicts = [ProjectReadWithCustomer.model_validate(p).model_dump() for p in projects_db]
+    projects_for_template_dicts = [
+        ProjectReadWithCustomer.model_validate(p).model_dump() for p in projects_db
+    ]
     projects_json_string = json.dumps(projects_for_template_dicts)
 
     # Fetch and convert users for the dropdown
     users_db = session.exec(select(User)).all()
     # Convert list of Pydantic models to list of dictionaries, then to JSON string
-    users_for_template_dicts = [UserReadForTimeEntry.model_validate(u).model_dump() for u in users_db]
+    users_for_template_dicts = [
+        UserReadForTimeEntry.model_validate(u).model_dump() for u in users_db
+    ]
     users_json_string = json.dumps(users_for_template_dicts)
 
     invoice_statuses = ["draft", "sent", "paid", "void"]  # Define allowed statuses

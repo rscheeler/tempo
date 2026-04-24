@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select
 from sqlalchemy.orm import selectinload
 
-from db.models import (
+from ..db.models import (
     Project,
     ProjectCreate,
     ProjectUpdate,
@@ -20,7 +20,7 @@ from db.models import (
     TimeEntry,
     Invoice,
 )
-from db.database import get_session
+from ..db.database import get_session
 
 projects_router = APIRouter(
     prefix="/api/projects",
@@ -29,11 +29,15 @@ projects_router = APIRouter(
 )
 
 
-@projects_router.post("/", response_model=Project, status_code=status.HTTP_201_CREATED, summary="Create a new Project")
+@projects_router.post(
+    "/", response_model=Project, status_code=status.HTTP_201_CREATED, summary="Create a new Project"
+)
 async def create_project(project_create: ProjectCreate, session: Session = Depends(get_session)):
     """Creates a new project in the database, including its associated tasks."""
     tasks_data = project_create.tasks
-    project = Project.model_validate(project_create.model_dump(exclude={"tasks"}, exclude_unset=True))
+    project = Project.model_validate(
+        project_create.model_dump(exclude={"tasks"}, exclude_unset=True)
+    )
 
     session.add(project)
     session.commit()
@@ -64,7 +68,9 @@ async def get_all_projects(
     """
     query = select(Project).options(
         selectinload(Project.tasks),  # Load tasks for project
-        selectinload(Project.time_entries).selectinload(TimeEntry.task),  # Load time entries and their associated tasks
+        selectinload(Project.time_entries).selectinload(
+            TimeEntry.task
+        ),  # Load time entries and their associated tasks
         selectinload(Project.customer),  # Load customer
     )
 
@@ -90,7 +96,11 @@ async def get_all_projects(
                 rate = 0.0
                 if project.rate_type == RateType.PROJECT and project.project_rate is not None:
                     rate = project.project_rate
-                elif project.rate_type == RateType.TASK and time_entry.task and time_entry.task.task_rate is not None:
+                elif (
+                    project.rate_type == RateType.TASK
+                    and time_entry.task
+                    and time_entry.task.task_rate is not None
+                ):
                     rate = time_entry.task.task_rate
                 total_charged_amount += time_entry.hours * rate
 
@@ -113,12 +123,17 @@ async def get_all_projects(
     return projects_with_charged_amount
 
 
-@projects_router.get("/{project_id}", response_model=ProjectReadWithTasks, summary="Get Project by ID")
+@projects_router.get(
+    "/{project_id}", response_model=ProjectReadWithTasks, summary="Get Project by ID"
+)
 async def get_project_by_id(project_id: int, session: Session = Depends(get_session)):
     """Retrieves a single project by their ID."""
     project = session.exec(
         select(Project)
-        .options(selectinload(Project.tasks), selectinload(Project.time_entries).selectinload(TimeEntry.task))
+        .options(
+            selectinload(Project.tasks),
+            selectinload(Project.time_entries).selectinload(TimeEntry.task),
+        )
         .where(Project.id == project_id)
     ).first()
     if not project:
@@ -133,7 +148,11 @@ async def get_project_by_id(project_id: int, session: Session = Depends(get_sess
             rate = 0.0
             if project.rate_type == RateType.PROJECT and project.project_rate is not None:
                 rate = project.project_rate
-            elif project.rate_type == RateType.TASK and time_entry.task and time_entry.task.task_rate is not None:
+            elif (
+                project.rate_type == RateType.TASK
+                and time_entry.task
+                and time_entry.task.task_rate is not None
+            ):
                 rate = time_entry.task.task_rate
             total_charged_amount += time_entry.hours * rate
 
@@ -152,7 +171,9 @@ async def get_project_by_id(project_id: int, session: Session = Depends(get_sess
 
 
 @projects_router.put("/{project_id}", response_model=Project, summary="Update a Project")
-async def update_project(project_id: int, project_update: ProjectUpdate, session: Session = Depends(get_session)):
+async def update_project(
+    project_id: int, project_update: ProjectUpdate, session: Session = Depends(get_session)
+):
     """Updates an existing project's information, including its associated tasks."""
     project = session.get(Project, project_id)
     if not project:
@@ -167,14 +188,18 @@ async def update_project(project_id: int, project_update: ProjectUpdate, session
 
     # Get current tasks associated with the project
     current_db_tasks = {task.id: task for task in project.tasks if task.id is not None}
-    incoming_task_ids = {task_data.id for task_data in tasks_to_update_or_create if task_data.id is not None}
+    incoming_task_ids = {
+        task_data.id for task_data in tasks_to_update_or_create if task_data.id is not None
+    }
 
     # Identify tasks to delete (those in DB but not in incoming payload)
     tasks_to_delete = []
     for task_id, task in current_db_tasks.items():
         if task_id not in incoming_task_ids:
             # Check for associated time entries before marking for deletion
-            associated_time_entry = session.exec(select(TimeEntry).where(TimeEntry.task_id == task_id)).first()
+            associated_time_entry = session.exec(
+                select(TimeEntry).where(TimeEntry.task_id == task_id)
+            ).first()
             if associated_time_entry:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -196,7 +221,10 @@ async def update_project(project_id: int, project_update: ProjectUpdate, session
             else:
                 # This case should ideally not happen if incoming_task_ids is correct,
                 # but if an ID is provided that doesn't exist for this project, treat as new.
-                new_task = Task(project_id=project.id, **task_data.model_dump(exclude={"id"}, exclude_unset=True))
+                new_task = Task(
+                    project_id=project.id,
+                    **task_data.model_dump(exclude={"id"}, exclude_unset=True),
+                )
                 session.add(new_task)
         else:  # New task
             new_task = Task(project_id=project.id, **task_data.model_dump(exclude_unset=True))
@@ -213,7 +241,9 @@ async def update_project(project_id: int, project_update: ProjectUpdate, session
     return project_with_tasks
 
 
-@projects_router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a Project")
+@projects_router.delete(
+    "/{project_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a Project"
+)
 async def delete_project(project_id: int, session: Session = Depends(get_session)):
     """Deletes a project from the database, preventing deletion if dependent records exist."""
     project = session.get(Project, project_id)
@@ -221,17 +251,23 @@ async def delete_project(project_id: int, session: Session = Depends(get_session
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
 
     # Check for associated time entries
-    associated_time_entry = session.exec(select(TimeEntry).where(TimeEntry.project_id == project_id)).first()
+    associated_time_entry = session.exec(
+        select(TimeEntry).where(TimeEntry.project_id == project_id)
+    ).first()
     if associated_time_entry:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot delete project: Associated time entries exist."
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete project: Associated time entries exist.",
         )
 
     # Check for associated invoices (if invoices can be directly linked to projects)
-    associated_invoice = session.exec(select(Invoice).where(Invoice.project_id == project_id)).first()
+    associated_invoice = session.exec(
+        select(Invoice).where(Invoice.project_id == project_id)
+    ).first()
     if associated_invoice:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot delete project: Associated invoices exist."
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete project: Associated invoices exist.",
         )
 
     # If no dependencies, proceed with deletion

@@ -4,8 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 from passlib.context import CryptContext  # Re-added for password hashing
 
-from db.models import User, UserCreate, UserUpdate  # Ensure User, UserCreate, UserUpdate are imported
-from db.database import get_session  # Import get_session from main.py
+from ..db.models import (
+    User,
+    UserCreate,
+    UserUpdate,
+)  # Ensure User, UserCreate, UserUpdate are imported
+from ..db.database import get_session  # Import get_session from main.py
 
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -27,7 +31,9 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-@users_router.post("/", response_model=User, status_code=status.HTTP_201_CREATED, summary="Create a new User")
+@users_router.post(
+    "/", response_model=User, status_code=status.HTTP_201_CREATED, summary="Create a new User"
+)
 async def create_user(user_create: UserCreate, session: Session = Depends(get_session)):
     """
     Creates a new user in the database.
@@ -36,7 +42,9 @@ async def create_user(user_create: UserCreate, session: Session = Depends(get_se
     # Check if a user with the given email already exists
     existing_user = session.exec(select(User).where(User.email == user_create.email)).first()
     if existing_user:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User with this email already exists.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="User with this email already exists."
+        )
 
     # Hash the password
     hashed_password = get_password_hash(user_create.password)
@@ -73,7 +81,9 @@ async def get_user_by_id(user_id: int, session: Session = Depends(get_session)):
 
 
 @users_router.put("/{user_id}", response_model=User, summary="Update a User")
-async def update_user(user_id: int, user_update: UserUpdate, session: Session = Depends(get_session)):
+async def update_user(
+    user_id: int, user_update: UserUpdate, session: Session = Depends(get_session)
+):
     """
     Updates an existing user's information.
     Hashes the new password if provided.

@@ -4,8 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 from sqlalchemy.orm import selectinload  # Import selectinload for eager loading
 
-from db.models import Task, TaskCreate, TaskUpdate, TimeEntry, Project  # Import TimeEntry and Project
-from db.database import get_session
+from ..db.models import (
+    Task,
+    TaskCreate,
+    TaskUpdate,
+    TimeEntry,
+    Project,
+)  # Import TimeEntry and Project
+from ..db.database import get_session
 
 tasks_router = APIRouter(
     prefix="/api/tasks",
@@ -14,7 +20,9 @@ tasks_router = APIRouter(
 )
 
 
-@tasks_router.post("/", response_model=Task, status_code=status.HTTP_201_CREATED, summary="Create a new Task")
+@tasks_router.post(
+    "/", response_model=Task, status_code=status.HTTP_201_CREATED, summary="Create a new Task"
+)
 async def create_task(task: TaskCreate, session: Session = Depends(get_session)):
     """Creates a new task in the database."""
     db_task = Task.model_validate(task)
@@ -26,7 +34,8 @@ async def create_task(task: TaskCreate, session: Session = Depends(get_session))
 
 @tasks_router.get("/", response_model=List[Task], summary="Get all Tasks")
 async def get_all_tasks(
-    session: Session = Depends(get_session), project_id: Optional[int] = None  # Optional filter by project_id
+    session: Session = Depends(get_session),
+    project_id: Optional[int] = None,  # Optional filter by project_id
 ):
     """Retrieves a list of all tasks, optionally filtered by project ID."""
     query = select(Task)
@@ -45,18 +54,24 @@ async def get_task_by_id(task_id: int, session: Session = Depends(get_session)):
     return task
 
 
-@tasks_router.get("/{task_id}/has_time_entries", summary="Check if Task has associated Time Entries")
+@tasks_router.get(
+    "/{task_id}/has_time_entries", summary="Check if Task has associated Time Entries"
+)
 async def has_task_time_entries(task_id: int, session: Session = Depends(get_session)) -> bool:
     """
     Checks if a task has any associated time entries.
     Returns True if time entries exist, False otherwise.
     """
-    associated_time_entry = session.exec(select(TimeEntry).where(TimeEntry.task_id == task_id)).first()
+    associated_time_entry = session.exec(
+        select(TimeEntry).where(TimeEntry.task_id == task_id)
+    ).first()
     return associated_time_entry is not None
 
 
 @tasks_router.put("/{task_id}", response_model=Task, summary="Update a Task")
-async def update_task(task_id: int, task_update: TaskUpdate, session: Session = Depends(get_session)):
+async def update_task(
+    task_id: int, task_update: TaskUpdate, session: Session = Depends(get_session)
+):
     """Updates an existing task's information."""
     task = session.get(Task, task_id)
     if not task:
@@ -80,10 +95,13 @@ async def delete_task(task_id: int, session: Session = Depends(get_session)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
 
     # Check for associated time entries
-    associated_time_entry = session.exec(select(TimeEntry).where(TimeEntry.task_id == task_id)).first()
+    associated_time_entry = session.exec(
+        select(TimeEntry).where(TimeEntry.task_id == task_id)
+    ).first()
     if associated_time_entry:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot delete task: Associated time entries exist."
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete task: Associated time entries exist.",
         )
 
     session.delete(task)

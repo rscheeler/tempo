@@ -132,7 +132,10 @@ dmypy.json
 *.db
 
 # Ignore everything inside the user_assets folder
-/tempo/static/user_assets/*
+/src/tempo/static/user_assets/*
 
 # Except for the .gitkeep file itself
-!/tempo/static/user_assets/.gitkeep
+!/src/tempo/static/user_assets/.gitkeep
+
+#
+uv.lock

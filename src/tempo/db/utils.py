@@ -1,5 +1,5 @@
 from sqlmodel import Session, select
-from db.models import Invoice
+from .models import Invoice
 from datetime import datetime, date
 
 
@@ -21,7 +21,9 @@ def generate_record_number(session: Session, record_date: date = None) -> str:
     highest_sequence = 0
     for model in [Invoice]:  # Add all your models here
         if hasattr(model, "record_number"):  # Check if the model has 'record_number' attribute
-            query = select(model.record_number).where(model.record_number.like(f"{base_record_number}%"))
+            query = select(model.record_number).where(
+                model.record_number.like(f"{base_record_number}%")
+            )
             results = session.exec(query).all()
             for result in results:
                 if result:  # Make sure result and result[0] are not None

@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy import func
 
-from db.models import (
+from ..db.models import (
     Invoice,
     InvoiceCreate,
     InvoiceUpdate,
@@ -26,8 +26,8 @@ from db.models import (
     UserReadForTimeEntry,
     CustomerReadForInvoice,
 )
-from db.database import get_session
-from db.utils import generate_record_number
+from ..db.database import get_session
+from ..db.utils import generate_record_number
 
 # Ensure the APIRouter is correctly defined with a prefix and tags
 invoices_router = APIRouter(
@@ -39,7 +39,8 @@ invoices_router = APIRouter(
 
 @invoices_router.get("/unbilled_entries", summary="Get Unbilled Time Entries for a Customer")
 async def get_unbilled_time_entries_for_customer(
-    customer_id: int = Query(..., description="ID of the customer"), session: Session = Depends(get_session)
+    customer_id: int = Query(..., description="ID of the customer"),
+    session: Session = Depends(get_session),
 ) -> List[Dict[str, Any]]:
     """
     Retrieves time entries for a specific customer that have not yet been linked to an invoice.
@@ -63,7 +64,8 @@ async def get_unbilled_time_entries_for_customer(
         )
         .join(TimeEntry.project)  # Ensure project is joined to filter by customer_id
         .where(
-            Project.customer_id == customer_id, ~subquery_invoiced_ids  # Filter out entries that are already invoiced
+            Project.customer_id == customer_id,
+            ~subquery_invoiced_ids,  # Filter out entries that are already invoiced
         )
         .order_by(TimeEntry.date, TimeEntry.id)  # Order for consistent display
     )
@@ -77,11 +79,19 @@ async def get_unbilled_time_entries_for_customer(
         entry_rate_type = None
 
         if entry.hours is not None:
-            if entry.project and entry.project.rate_type == RateType.PROJECT and entry.project.project_rate is not None:
+            if (
+                entry.project
+                and entry.project.rate_type == RateType.PROJECT
+                and entry.project.project_rate is not None
+            ):
                 entry_dollars = entry.hours * entry.project.project_rate
                 entry_rate = entry.project.project_rate
                 entry_rate_type = RateType.PROJECT.value
-            elif entry.task and entry.project.rate_type == RateType.TASK and entry.task.task_rate is not None:
+            elif (
+                entry.task
+                and entry.project.rate_type == RateType.TASK
+                and entry.task.task_rate is not None
+            ):
                 entry_dollars = entry.hours * entry.task.task_rate
                 entry_rate = entry.task.task_rate
                 entry_rate_type = RateType.TASK.value
@@ -101,8 +111,12 @@ async def get_unbilled_time_entries_for_customer(
                 "entry_dollars": entry_dollars,
                 "entry_rate": entry_rate,
                 "entry_rate_type": entry_rate_type,
-                "customer_id": entry.project.customer_id if entry.project and entry.project.customer else None,
-                "customer_name": entry.project.customer.name if entry.project and entry.project.customer else "N/A",
+                "customer_id": entry.project.customer_id
+                if entry.project and entry.project.customer
+                else None,
+                "customer_name": entry.project.customer.name
+                if entry.project and entry.project.customer
+                else "N/A",
             }
         )
     return result
@@ -128,7 +142,9 @@ def get_invoices_for_quickbooks(session: Session = Depends(get_session)) -> List
     quickbooks_invoices = []
     for invoice in invoices:
         # Group time entries by project and then by task, aggregating hours and dollars
-        grouped_by_project = defaultdict(lambda: defaultdict(lambda: {"hours": 0.0, "dollars": 0.0, "rate": None}))
+        grouped_by_project = defaultdict(
+            lambda: defaultdict(lambda: {"hours": 0.0, "dollars": 0.0, "rate": None})
+        )
 
         for item in invoice.time_entries:
             project_name = item.project.name if item.project else "Unassigned Project"
@@ -138,16 +154,27 @@ def get_invoices_for_quickbooks(session: Session = Depends(get_session)) -> List
             entry_dollars = 0.0
             entry_rate = None
             if item.hours is not None and item.project:
-                if item.project.rate_type == RateType.PROJECT and item.project.project_rate is not None:
+                if (
+                    item.project.rate_type == RateType.PROJECT
+                    and item.project.project_rate is not None
+                ):
                     entry_dollars = item.hours * item.project.project_rate
                     entry_rate = item.project.project_rate
-                elif item.task and item.project.rate_type == RateType.TASK and item.task.task_rate is not None:
+                elif (
+                    item.task
+                    and item.project.rate_type == RateType.TASK
+                    and item.task.task_rate is not None
+                ):
                     entry_dollars = item.hours * item.task.task_rate
                     entry_rate = item.task.task_rate
 
-            grouped_by_project[project_name][task_name]["hours"] += item.hours if item.hours else 0.0
+            grouped_by_project[project_name][task_name]["hours"] += (
+                item.hours if item.hours else 0.0
+            )
             grouped_by_project[project_name][task_name]["dollars"] += entry_dollars
-            grouped_by_project[project_name][task_name]["rate"] = entry_rate  # Assuming rate is consistent per task
+            grouped_by_project[project_name][task_name]["rate"] = (
+                entry_rate  # Assuming rate is consistent per task
+            )
 
         line_items = []
         for project_name, tasks in grouped_by_project.items():
@@ -175,8 +202,12 @@ def get_invoices_for_quickbooks(session: Session = Depends(get_session)) -> List
     return quickbooks_invoices
 
 
-@invoices_router.post("/", response_model=Invoice, status_code=status.HTTP_201_CREATED, summary="Create a new Invoice")
-async def create_invoice(invoice_create: InvoiceCreate, session: Session = Depends(get_session)) -> Invoice:
+@invoices_router.post(
+    "/", response_model=Invoice, status_code=status.HTTP_201_CREATED, summary="Create a new Invoice"
+)
+async def create_invoice(
+    invoice_create: InvoiceCreate, session: Session = Depends(get_session)
+) -> Invoice:
     """
     Creates a new invoice and links specified time entries to it.
     Calculates the total_amount based on the linked time entries.
@@ -198,16 +229,25 @@ async def create_invoice(invoice_create: InvoiceCreate, session: Session = Depen
 
     if not selected_time_entries:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="No valid time entries found for the provided IDs."
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No valid time entries found for the provided IDs.",
         )
 
     calculated_total_amount = 0.0
     for entry in selected_time_entries:
         entry_dollars = 0.0
         if entry.hours is not None:
-            if entry.project and entry.project.rate_type == RateType.PROJECT and entry.project.project_rate is not None:
+            if (
+                entry.project
+                and entry.project.rate_type == RateType.PROJECT
+                and entry.project.project_rate is not None
+            ):
                 entry_dollars = entry.hours * entry.project.project_rate
-            elif entry.task and entry.project.rate_type == RateType.TASK and entry.task.task_rate is not None:
+            elif (
+                entry.task
+                and entry.project.rate_type == RateType.TASK
+                and entry.task.task_rate is not None
+            ):
                 entry_dollars = entry.hours * entry.task.task_rate
         calculated_total_amount += entry_dollars
 
@@ -264,16 +304,24 @@ async def get_all_invoices(session: Session = Depends(get_session)) -> List[Invo
         select(Invoice).options(
             selectinload(Invoice.customer),
             selectinload(Invoice.project),
-            selectinload(Invoice.time_entries).selectinload(TimeEntry.project),  # Load project for each time entry
-            selectinload(Invoice.time_entries).selectinload(TimeEntry.task),  # Load task for each time entry
-            selectinload(Invoice.time_entries).selectinload(TimeEntry.user),  # Load user for each time entry
+            selectinload(Invoice.time_entries).selectinload(
+                TimeEntry.project
+            ),  # Load project for each time entry
+            selectinload(Invoice.time_entries).selectinload(
+                TimeEntry.task
+            ),  # Load task for each time entry
+            selectinload(Invoice.time_entries).selectinload(
+                TimeEntry.user
+            ),  # Load user for each time entry
         )
     ).all()
     return invoices
 
 
 @invoices_router.get("/{invoice_id}", response_model=InvoiceRead, summary="Get Invoice by ID")
-async def get_invoice_by_id(invoice_id: int, session: Session = Depends(get_session)) -> InvoiceRead:
+async def get_invoice_by_id(
+    invoice_id: int, session: Session = Depends(get_session)
+) -> InvoiceRead:
     """Retrieves a single invoice by its ID."""
     invoice = session.exec(
         select(Invoice)
@@ -281,9 +329,15 @@ async def get_invoice_by_id(invoice_id: int, session: Session = Depends(get_sess
         .options(
             selectinload(Invoice.customer),
             selectinload(Invoice.project),
-            selectinload(Invoice.time_entries).selectinload(TimeEntry.project),  # Load project for each time entry
-            selectinload(Invoice.time_entries).selectinload(TimeEntry.task),  # Load task for each time entry
-            selectinload(Invoice.time_entries).selectinload(TimeEntry.user),  # Load user for each time entry
+            selectinload(Invoice.time_entries).selectinload(
+                TimeEntry.project
+            ),  # Load project for each time entry
+            selectinload(Invoice.time_entries).selectinload(
+                TimeEntry.task
+            ),  # Load task for each time entry
+            selectinload(Invoice.time_entries).selectinload(
+                TimeEntry.user
+            ),  # Load user for each time entry
         )
     ).first()
     if not invoice:
@@ -291,7 +345,9 @@ async def get_invoice_by_id(invoice_id: int, session: Session = Depends(get_sess
     return invoice
 
 
-@invoices_router.put("/{invoice_id}", response_model=Invoice, summary="Update an Invoice", name="update_invoice")
+@invoices_router.put(
+    "/{invoice_id}", response_model=Invoice, summary="Update an Invoice", name="update_invoice"
+)
 async def update_invoice(
     invoice_id: int, invoice_update: InvoiceUpdate, session: Session = Depends(get_session)
 ) -> Invoice:
@@ -348,7 +404,12 @@ async def update_invoice(
     # (i.e., attempting to change other fields or status to non-void/non-draft)
     if current_status != "draft":
         # Allow only status change to 'sent' or 'paid' if not already 'void'
-        if new_status and new_status != current_status and new_status in ["sent", "paid"] and current_status != "void":
+        if (
+            new_status
+            and new_status != current_status
+            and new_status in ["sent", "paid"]
+            and current_status != "void"
+        ):
             setattr(invoice, "status", new_status)
             session.add(invoice)
             session.commit()
@@ -389,7 +450,8 @@ async def update_invoice(
         for entry_id in entries_to_unlink_ids:
             link_to_delete = session.exec(
                 select(TimeEntryInvoiceLink).where(
-                    TimeEntryInvoiceLink.invoice_id == invoice_id, TimeEntryInvoiceLink.time_entry_id == entry_id
+                    TimeEntryInvoiceLink.invoice_id == invoice_id,
+                    TimeEntryInvoiceLink.time_entry_id == entry_id,
                 )
             ).first()
             if link_to_delete:
@@ -421,7 +483,11 @@ async def update_invoice(
                     and entry.project.project_rate is not None
                 ):
                     entry_dollars = entry.hours * entry.project.project_rate
-                elif entry.task and entry.project.rate_type == RateType.TASK and entry.task.task_rate is not None:
+                elif (
+                    entry.task
+                    and entry.project.rate_type == RateType.TASK
+                    and entry.task.task_rate is not None
+                ):
                     entry_dollars = entry.hours * entry.task.task_rate
             calculated_total_amount += entry_dollars
 
@@ -448,7 +514,9 @@ async def update_invoice(
     return db_invoice
 
 
-@invoices_router.delete("/{invoice_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete an Invoice")
+@invoices_router.delete(
+    "/{invoice_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete an Invoice"
+)
 async def delete_invoice(invoice_id: int, session: Session = Depends(get_session)):
     """
     Deletes an invoice from the database and unlinks its time entries.
@@ -466,10 +534,14 @@ async def delete_invoice(invoice_id: int, session: Session = Depends(get_session
         )
 
     # Delete all associated TimeEntryInvoiceLink entries first
-    links = session.exec(select(TimeEntryInvoiceLink).where(TimeEntryInvoiceLink.invoice_id == invoice_id)).all()
+    links = session.exec(
+        select(TimeEntryInvoiceLink).where(TimeEntryInvoiceLink.invoice_id == invoice_id)
+    ).all()
     for link in links:
         session.delete(link)
 
     session.delete(invoice)
     session.commit()
-    return {"message": "Invoice deleted successfully."}  # Return a message since 204 No Content typically has no body
+    return {
+        "message": "Invoice deleted successfully."
+    }  # Return a message since 204 No Content typically has no body
