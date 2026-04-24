@@ -1,43 +1,41 @@
 import json  # Import json module
-
 from contextlib import asynccontextmanager
-from datetime import datetime, date, timedelta
-from typing import List, Optional
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import List, Optional
 
-from fastapi import FastAPI, Request, Depends, Query, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from sqlmodel import Session, select
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import selectinload
+from sqlmodel import Session, select
 
+from .db.config import settings
+from .db.database import create_db_and_tables, get_session
 from .db.models import (
-    User,
-    TimeEntry,
-    Project,
-    Task,
-    Customer,
-    ProjectType,
-    RateType,
     BudgetUnit,
+    Customer,
+    CustomerReadForInvoice,
     Invoice,
     # Import Read models for serialization
     InvoiceRead,
-    CustomerReadForInvoice,
+    Project,
     ProjectReadForTimeEntry,
-    UserReadForTimeEntry,
     ProjectReadWithCustomer,
+    ProjectType,
+    RateType,
+    Task,
+    TimeEntry,
+    User,
+    UserReadForTimeEntry,
 )
-from .db.config import settings
-from .db.database import create_db_and_tables, get_session
-
-from .routers.users import users_router
-from .routers.time_entries import time_entries_router
 from .routers.customers import customers_router
-from .routers.projects import projects_router, get_all_projects
-from .routers.tasks import tasks_router
 from .routers.invoices import invoices_router
+from .routers.projects import get_all_projects, projects_router
+from .routers.tasks import tasks_router
+from .routers.time_entries import time_entries_router
+from .routers.users import users_router
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -77,7 +75,7 @@ def format_datetime(value, format="%Y-%m-%d"):
     """Formats a datetime object or 'now' string into a specified string format."""
     if isinstance(value, datetime) or isinstance(value, date):
         return value.strftime(format)
-    elif value == "now":
+    if value == "now":
         return datetime.now().strftime(format)
     return str(value)
 
@@ -127,7 +125,9 @@ def json_serial(obj):
 async def read_root(request: Request):
     """Renders the main index page."""
     return templates.TemplateResponse(
-        "index.html", {"request": request, "title": "Home", "url_for": request.url_for}
+        request=request,
+        name="index.html",
+        context={"title": "Home", "url_for": request.url_for},
     )
 
 
@@ -136,16 +136,17 @@ async def read_users_page(request: Request, session: Session = Depends(get_sessi
     """Renders the users management page and fetches all users."""
     users = session.exec(select(User)).all()
     return templates.TemplateResponse(
-        "users.html",
-        {"request": request, "users": users, "title": "Manage Users", "url_for": request.url_for},
+        request=request,
+        name="users.html",
+        context={"users": users, "title": "Manage Users", "url_for": request.url_for},
     )
 
 
 @app.get("/time_entries", response_class=HTMLResponse, summary="Time Entries Management Page")
 async def read_time_entries_page(
     request: Request,
-    start_date_str: Optional[str] = Query(None, alias="start_date"),
-    end_date_str: Optional[str] = Query(None, alias="end_date"),
+    start_date_str: str | None = Query(None, alias="start_date"),
+    end_date_str: str | None = Query(None, alias="end_date"),
 ):
     """
     Renders the time entries management page.
@@ -171,9 +172,9 @@ async def read_time_entries_page(
     next_week_end = end_of_week + timedelta(weeks=1)
 
     return templates.TemplateResponse(
-        "time_entries.html",
-        {
-            "request": request,
+        request=request,
+        name="time_entries.html",
+        context={
             "start_of_week": start_of_week,
             "end_of_week": end_of_week,
             "previous_week_start": previous_week_start,
@@ -197,10 +198,11 @@ async def read_customers_page(
         query = query.where(Customer.is_archived == False)
     customers = session.exec(query).all()
     return templates.TemplateResponse(
-        "customers.html",
-        {
-            "request": request,
+        request=request,
+        name="customers.html",
+        context={
             "customers": customers,
+            "query_params": request.query_params,
             "title": "Manage Customers",
             "url_for": request.url_for,
         },
@@ -211,8 +213,9 @@ async def read_customers_page(
 async def read_projects_page(
     request: Request,
     session: Session = Depends(get_session),
-    customer_id: Optional[int] = Query(
-        None, description="Filter projects by customer ID"
+    customer_id: int | None = Query(
+        None,
+        description="Filter projects by customer ID",
     ),  # Add customer_id parameter here
     show_archived: bool = Query(False, description="Include archived projects in the list"),
 ):
@@ -220,14 +223,17 @@ async def read_projects_page(
     # Call the API endpoint from projects_router to get projects with calculated charged amounts
     # Pass the customer_id directly to get_all_projects
     projects = await get_all_projects(
-        session=session, customer_id=customer_id, show_archived=show_archived
+        session=session,
+        customer_id=customer_id,
+        show_archived=show_archived,
     )
 
     return templates.TemplateResponse(
-        "projects.html",
-        {
-            "request": request,
+        request=request,
+        name="projects.html",
+        context={
             "projects": projects,
+            "query_params": request.query_params,
             "title": "Manage Projects",
             "url_for": request.url_for,
         },
@@ -238,15 +244,18 @@ async def read_projects_page(
 async def read_invoices_page(request: Request):
     """Renders the invoicing management page."""
     return templates.TemplateResponse(
-        "invoices.html",
-        {"request": request, "title": "Manage Invoices", "url_for": request.url_for},
+        request=request,
+        name="invoices.html",
+        context={"title": "Manage Invoices", "url_for": request.url_for},
     )
 
 
 # HTML endpoint for Invoice detail page
 @app.get("/invoices/view/{invoice_id}", response_class=HTMLResponse, summary="Invoice Detail Page")
 async def read_invoice_detail_page(
-    request: Request, invoice_id: int, session: Session = Depends(get_session)
+    request: Request,
+    invoice_id: int,
+    session: Session = Depends(get_session),
 ):
     """Renders a detailed view of a single invoice."""
     invoice = session.exec(
@@ -258,7 +267,7 @@ async def read_invoice_detail_page(
             selectinload(Invoice.time_entries).selectinload(TimeEntry.project),
             selectinload(Invoice.time_entries).selectinload(TimeEntry.task),
             selectinload(Invoice.time_entries).selectinload(TimeEntry.user),
-        )
+        ),
     ).first()
 
     if not invoice:
@@ -358,7 +367,7 @@ async def read_invoice_detail_page(
     projects_db = session.exec(
         select(Project)
         .where(Project.is_archived == False)
-        .options(selectinload(Project.customer), selectinload(Project.tasks))
+        .options(selectinload(Project.customer), selectinload(Project.tasks)),
     ).all()
     # Convert list of Pydantic models to list of dictionaries, then to JSON string
     projects_for_template_dicts = [
@@ -377,9 +386,9 @@ async def read_invoice_detail_page(
     invoice_statuses = ["draft", "sent", "paid", "void"]  # Define allowed statuses
 
     return templates.TemplateResponse(
-        "invoice_view.html",
-        {
-            "request": request,
+        request=request,
+        name="invoice_view.html",
+        context={
             "invoice": invoice,  # Pass the Pydantic model for direct Jinja access
             "invoice_json_string": invoice_json_string,  # NEW: Pass JSON string for JS
             "invoice_items": invoice_items,
@@ -402,8 +411,9 @@ def read_reports_page(request: Request):
     Renders the reports page.
     """
     return templates.TemplateResponse(
-        "reports.html",
-        {"request": request, "title": "Reports", "url_for": request.url_for},
+        request=request,
+        name="reports.html",
+        context={"title": "Reports", "url_for": request.url_for},
     )
 
 
