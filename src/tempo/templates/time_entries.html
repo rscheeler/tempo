@@ -16,9 +16,9 @@
         </button>
     </div>
     <div class="btn-group" role="group" aria-label="View Toggle">
-        <button type="button" class="btn btn-outline-secondary active" id="weeklyViewBtn">Weekly</button>
+        <button type="button" class="btn btn-outline-secondary" id="weeklyViewBtn">Weekly</button>
         <button type="button" class="btn btn-outline-secondary" id="dailyViewBtn">Daily</button>
-        <button type="button" class="btn btn-outline-secondary" id="timesheetViewBtn">Timesheet</button>
+        <button type="button" class="btn btn-outline-secondary active" id="timesheetViewBtn">Timesheet</button>
     </div>
     <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addTimeEntryModal">
         <i class="fas fa-plus-circle me-2"></i>Add New Time Entry
@@ -600,7 +600,7 @@
                 currentDateRangeElement.textContent = `${formatDate(startDate)} to ${formatDate(endDate)}`;
                 previousPeriodText.textContent = 'Previous Week';
                 nextPeriodText.textContent = 'Next Week';
-            } else { // timesheet
+            } else if (viewMode === 'timesheet') { // timesheet
                 startDate = getStartOfWeek(displayDate);
                 endDate = getEndOfWeek(displayDate);
                 viewModeTitleElement.textContent = 'Timesheet Week of';
@@ -678,7 +678,7 @@
 
         // Global variables to keep track of the currently displayed date and view mode
         let currentDisplayedDate = new Date();
-        let currentViewMode = 'weekly'; // Default view mode
+        let currentViewMode = 'timesheet'; // Default view mode
 
         // Function to update URL parameters based on current state
         function updateUrlParams(date, mode) {
