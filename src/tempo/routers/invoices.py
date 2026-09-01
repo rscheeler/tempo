@@ -1,32 +1,32 @@
-from typing import List, Optional, Dict, Any
-from datetime import date, datetime
 from collections import defaultdict
+from datetime import date, datetime
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from sqlmodel import Session, select
-from sqlalchemy.orm import selectinload
 from sqlalchemy import func
+from sqlalchemy.orm import selectinload
+from sqlmodel import Session, select
 
+from ..db.database import get_session
 from ..db.models import (
+    Customer,
+    CustomerReadForInvoice,
     Invoice,
     InvoiceCreate,
-    InvoiceUpdate,
-    TimeEntry,
-    Customer,
-    Project,
-    Task,
-    TimeEntryInvoiceLink,
-    RateType,
     InvoiceRead,
-    TimeEntryReadForInvoice,
+    InvoiceUpdate,
+    Project,
     ProjectReadForTimeEntry,
+    RateType,
+    Task,
     TaskReadForTimeEntry,
+    TimeEntry,
+    TimeEntryInvoiceLink,
+    TimeEntryReadForInvoice,
     UserReadForTimeEntry,
-    CustomerReadForInvoice,
 )
-from ..db.database import get_session
 from ..db.utils import generate_record_number
 
 # Ensure the APIRouter is correctly defined with a prefix and tags
@@ -41,7 +41,7 @@ invoices_router = APIRouter(
 async def get_unbilled_time_entries_for_customer(
     customer_id: int = Query(..., description="ID of the customer"),
     session: Session = Depends(get_session),
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Retrieves time entries for a specific customer that have not yet been linked to an invoice.
     Includes project, task, and user details, along with calculated dollar values.
@@ -106,6 +106,9 @@ async def get_unbilled_time_entries_for_customer(
                 "user_name": getattr(entry.user, "name", "N/A") if entry.user else "N/A",
                 "project_id": entry.project_id,
                 "project_name": entry.project.name if entry.project else "N/A",
+                "project_type": entry.project.project_type.value
+                if entry.project and entry.project.project_type
+                else None,
                 "task_id": entry.task_id,
                 "task_name": entry.task.name if entry.task else "N/A",
                 "entry_dollars": entry_dollars,
@@ -117,13 +120,13 @@ async def get_unbilled_time_entries_for_customer(
                 "customer_name": entry.project.customer.name
                 if entry.project and entry.project.customer
                 else "N/A",
-            }
+            },
         )
     return result
 
 
 @invoices_router.get("/for-quickbooks")
-def get_invoices_for_quickbooks(session: Session = Depends(get_session)) -> List[Dict[str, Any]]:
+def get_invoices_for_quickbooks(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
     """
     Fetches all invoices and formats the data for a QuickBooks CSV export.
     This endpoint is designed to provide the frontend with all the necessary
@@ -136,14 +139,14 @@ def get_invoices_for_quickbooks(session: Session = Depends(get_session)) -> List
         .options(selectinload(Invoice.project))
         .options(selectinload(Invoice.time_entries).selectinload(TimeEntry.user))
         .options(selectinload(Invoice.time_entries).selectinload(TimeEntry.project))
-        .options(selectinload(Invoice.time_entries).selectinload(TimeEntry.task))
+        .options(selectinload(Invoice.time_entries).selectinload(TimeEntry.task)),
     ).all()
 
     quickbooks_invoices = []
     for invoice in invoices:
         # Group time entries by project and then by task, aggregating hours and dollars
         grouped_by_project = defaultdict(
-            lambda: defaultdict(lambda: {"hours": 0.0, "dollars": 0.0, "rate": None})
+            lambda: defaultdict(lambda: {"hours": 0.0, "dollars": 0.0, "rate": None}),
         )
 
         for item in invoice.time_entries:
@@ -168,9 +171,7 @@ def get_invoices_for_quickbooks(session: Session = Depends(get_session)) -> List
                     entry_dollars = item.hours * item.task.task_rate
                     entry_rate = item.task.task_rate
 
-            grouped_by_project[project_name][task_name]["hours"] += (
-                item.hours if item.hours else 0.0
-            )
+            grouped_by_project[project_name][task_name]["hours"] += item.hours or 0.0
             grouped_by_project[project_name][task_name]["dollars"] += entry_dollars
             grouped_by_project[project_name][task_name]["rate"] = (
                 entry_rate  # Assuming rate is consistent per task
@@ -203,10 +204,14 @@ def get_invoices_for_quickbooks(session: Session = Depends(get_session)) -> List
 
 
 @invoices_router.post(
-    "/", response_model=Invoice, status_code=status.HTTP_201_CREATED, summary="Create a new Invoice"
+    "/",
+    response_model=Invoice,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new Invoice",
 )
 async def create_invoice(
-    invoice_create: InvoiceCreate, session: Session = Depends(get_session)
+    invoice_create: InvoiceCreate,
+    session: Session = Depends(get_session),
 ) -> Invoice:
     """
     Creates a new invoice and links specified time entries to it.
@@ -291,36 +296,37 @@ async def create_invoice(
             selectinload(Invoice.time_entries).selectinload(TimeEntry.task),
             selectinload(Invoice.time_entries).selectinload(TimeEntry.user),
         )
-        .where(Invoice.id == db_invoice.id)
+        .where(Invoice.id == db_invoice.id),
     ).first()
 
     return db_invoice
 
 
-@invoices_router.get("/", response_model=List[InvoiceRead], summary="Get all Invoices")
-async def get_all_invoices(session: Session = Depends(get_session)) -> List[InvoiceRead]:
+@invoices_router.get("/", response_model=list[InvoiceRead], summary="Get all Invoices")
+async def get_all_invoices(session: Session = Depends(get_session)) -> list[InvoiceRead]:
     """Retrieves a list of all invoices."""
     invoices = session.exec(
         select(Invoice).options(
             selectinload(Invoice.customer),
             selectinload(Invoice.project),
             selectinload(Invoice.time_entries).selectinload(
-                TimeEntry.project
+                TimeEntry.project,
             ),  # Load project for each time entry
             selectinload(Invoice.time_entries).selectinload(
-                TimeEntry.task
+                TimeEntry.task,
             ),  # Load task for each time entry
             selectinload(Invoice.time_entries).selectinload(
-                TimeEntry.user
+                TimeEntry.user,
             ),  # Load user for each time entry
-        )
+        ),
     ).all()
     return invoices
 
 
 @invoices_router.get("/{invoice_id}", response_model=InvoiceRead, summary="Get Invoice by ID")
 async def get_invoice_by_id(
-    invoice_id: int, session: Session = Depends(get_session)
+    invoice_id: int,
+    session: Session = Depends(get_session),
 ) -> InvoiceRead:
     """Retrieves a single invoice by its ID."""
     invoice = session.exec(
@@ -330,15 +336,15 @@ async def get_invoice_by_id(
             selectinload(Invoice.customer),
             selectinload(Invoice.project),
             selectinload(Invoice.time_entries).selectinload(
-                TimeEntry.project
+                TimeEntry.project,
             ),  # Load project for each time entry
             selectinload(Invoice.time_entries).selectinload(
-                TimeEntry.task
+                TimeEntry.task,
             ),  # Load task for each time entry
             selectinload(Invoice.time_entries).selectinload(
-                TimeEntry.user
+                TimeEntry.user,
             ),  # Load user for each time entry
-        )
+        ),
     ).first()
     if not invoice:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
@@ -346,10 +352,15 @@ async def get_invoice_by_id(
 
 
 @invoices_router.put(
-    "/{invoice_id}", response_model=Invoice, summary="Update an Invoice", name="update_invoice"
+    "/{invoice_id}",
+    response_model=Invoice,
+    summary="Update an Invoice",
+    name="update_invoice",
 )
 async def update_invoice(
-    invoice_id: int, invoice_update: InvoiceUpdate, session: Session = Depends(get_session)
+    invoice_id: int,
+    invoice_update: InvoiceUpdate,
+    session: Session = Depends(get_session),
 ) -> Invoice:
     """
     Updates an existing invoice's information and its linked time entries.
@@ -359,7 +370,7 @@ async def update_invoice(
     invoice = session.exec(
         select(Invoice)
         .where(Invoice.id == invoice_id)
-        .options(selectinload(Invoice.time_entries))  # Eager load current time entries
+        .options(selectinload(Invoice.time_entries)),  # Eager load current time entries
     ).first()
 
     if not invoice:
@@ -375,13 +386,13 @@ async def update_invoice(
     if new_status == "void" and current_status != "void":
         # Delete all associated TimeEntryInvoiceLink entries to free up time entries
         links_to_delete = session.exec(
-            select(TimeEntryInvoiceLink).where(TimeEntryInvoiceLink.invoice_id == invoice_id)
+            select(TimeEntryInvoiceLink).where(TimeEntryInvoiceLink.invoice_id == invoice_id),
         ).all()
         for link in links_to_delete:
             session.delete(link)
         # Set total_amount to 0 for voided invoices
         invoice.total_amount = 0.0
-        setattr(invoice, "status", new_status)  # Update status to void
+        invoice.status = new_status  # Update status to void
         session.add(invoice)  # Add updated invoice to session
         session.commit()  # Commit status and unlinking changes
         session.refresh(invoice)  # Refresh to get the latest state
@@ -396,7 +407,7 @@ async def update_invoice(
                 selectinload(Invoice.time_entries).selectinload(TimeEntry.task),
                 selectinload(Invoice.time_entries).selectinload(TimeEntry.user),
             )
-            .where(Invoice.id == invoice_id)
+            .where(Invoice.id == invoice_id),
         ).first()
         return db_invoice  # Return early for void action
 
@@ -410,7 +421,7 @@ async def update_invoice(
             and new_status in ["sent", "paid"]
             and current_status != "void"
         ):
-            setattr(invoice, "status", new_status)
+            invoice.status = new_status
             session.add(invoice)
             session.commit()
             session.refresh(invoice)
@@ -424,14 +435,13 @@ async def update_invoice(
                     selectinload(Invoice.time_entries).selectinload(TimeEntry.task),
                     selectinload(Invoice.time_entries).selectinload(TimeEntry.user),
                 )
-                .where(Invoice.id == invoice_id)
+                .where(Invoice.id == invoice_id),
             ).first()
             return db_invoice
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Invoice cannot be updated. Current status is '{current_status}'. Only 'draft' invoices can be fully edited, or status can be changed to 'sent'/'paid'.",
-            )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Invoice cannot be updated. Current status is '{current_status}'. Only 'draft' invoices can be fully edited, or status can be changed to 'sent'/'paid'.",
+        )
 
     # If we reach here, the invoice is in 'draft' status, so allow full editing
     # Remove time_entry_ids from update_data to handle separately
@@ -452,7 +462,7 @@ async def update_invoice(
                 select(TimeEntryInvoiceLink).where(
                     TimeEntryInvoiceLink.invoice_id == invoice_id,
                     TimeEntryInvoiceLink.time_entry_id == entry_id,
-                )
+                ),
             ).first()
             if link_to_delete:
                 session.delete(link_to_delete)
@@ -508,14 +518,16 @@ async def update_invoice(
             selectinload(Invoice.time_entries).selectinload(TimeEntry.task),
             selectinload(Invoice.time_entries).selectinload(TimeEntry.user),
         )
-        .where(Invoice.id == invoice_id)
+        .where(Invoice.id == invoice_id),
     ).first()
 
     return db_invoice
 
 
 @invoices_router.delete(
-    "/{invoice_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete an Invoice"
+    "/{invoice_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete an Invoice",
 )
 async def delete_invoice(invoice_id: int, session: Session = Depends(get_session)):
     """
@@ -535,7 +547,7 @@ async def delete_invoice(invoice_id: int, session: Session = Depends(get_session
 
     # Delete all associated TimeEntryInvoiceLink entries first
     links = session.exec(
-        select(TimeEntryInvoiceLink).where(TimeEntryInvoiceLink.invoice_id == invoice_id)
+        select(TimeEntryInvoiceLink).where(TimeEntryInvoiceLink.invoice_id == invoice_id),
     ).all()
     for link in links:
         session.delete(link)
@@ -543,5 +555,5 @@ async def delete_invoice(invoice_id: int, session: Session = Depends(get_session
     session.delete(invoice)
     session.commit()
     return {
-        "message": "Invoice deleted successfully."
+        "message": "Invoice deleted successfully.",
     }  # Return a message since 204 No Content typically has no body
